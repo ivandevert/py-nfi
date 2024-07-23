@@ -19,7 +19,8 @@ def read_beta_files(beta_dir):
     Last Modified:
         2024-07-22
     """
-    
+    import os
+
     beta_files = [el for el in os.listdir(beta_dir) if el.endswith('.beta')]
     beta_files.sort()
     nfiles = len(beta_files)
@@ -52,7 +53,7 @@ def read_beta_files(beta_dir):
         FMT_VERSION = struct.unpack('i', f.read(4))[0]
 
         if FMT_VERSION == 0:
-            stname = f.read(20).decode('UTF-8')
+            stname = f.read(20).decode('UTF-8').strip('\x00')
             slat = struct.unpack('f', f.read(4))[0]
             slon = struct.unpack('f', f.read(4))[0]
             selev = struct.unpack('f', f.read(4))[0]
