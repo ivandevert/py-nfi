@@ -8,8 +8,6 @@ def read_beta_files(beta_dir):
     """Read in all binary .beta files in a directory and return a DataFrame 
     containing all data, with one line per station.
 
-    not true 
-
     Args:
         beta_dir (str): Directory containing .beta files
 
@@ -19,66 +17,31 @@ def read_beta_files(beta_dir):
     Sources:
 
     Last Modified:
-        2024-10-08
+        2024-07-22
     """
     import os
-    try:
-        from tqdm import tqdm, trange
-        loopfunc = trange
-    except:
-        loopfunc = range
 
     beta_files = [el for el in os.listdir(beta_dir) if el.endswith('.beta')]
     beta_files.sort()
     nfiles = len(beta_files)
-    print(f"{nfiles} beta files found")
 
-    # get format of files
-    filepath = beta_dir + beta_files[0]
-    f = open(filepath, 'rb')
-    f.seek(0, 2)
-    file_size = f.tell()
-    f.seek(0, 0)
-    _ = struct.unpack('i', f.read(4))[0]
-    FMT_VERSION = struct.unpack('i', f.read(4))[0]
-    f.close()
+    df = pd.DataFrame({
+        "stname": pd.arrays.SparseArray(dtype="str", data=[]), 
+        "slat": pd.arrays.SparseArray(dtype="float", data=[]), 
+        "slon": pd.arrays.SparseArray(dtype="float", data=[]), 
+        "selev": pd.arrays.SparseArray(dtype="float", data=[]), 
 
-    if FMT_VERSION==0:
-        df = pd.DataFrame({
-            "stname": pd.arrays.SparseArray(dtype="str", data=[]), 
-            "slat": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "slon": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "selev": pd.arrays.SparseArray(dtype="float", data=[]), 
+        "event_id": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "qmag": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "qlat": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "qlon": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "qdep": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "beta": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
+        "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
+    })
 
-            "event_id": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qmag": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qlat": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qlon": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qdep": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "beta": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
-        })
-
-    if FMT_VERSION==1:
-        df = pd.DataFrame({
-            "event_id": pd.arrays.SparseArray(dtype="str", data=[]), 
-            "qmag": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qlat": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qlon": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qdep": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "nstations": pd.arrays.SparseArray(dtype="int", data=[]), 
-
-            "stname": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "slat": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "slon": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "selev": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "logbeta": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
-        })
-    
-    for i in loopfunc(nfiles):
+    for i in range(nfiles):
         filepath = beta_dir + beta_files[i]
 
         f = open(filepath, 'rb')
@@ -89,7 +52,6 @@ def read_beta_files(beta_dir):
         junk = struct.unpack('i', f.read(4))[0]
         FMT_VERSION = struct.unpack('i', f.read(4))[0]
 
-        # station-organized
         if FMT_VERSION == 0:
             stname = f.read(20).decode('UTF-8').strip('\x00')
             slat = struct.unpack('f', f.read(4))[0]
@@ -125,115 +87,66 @@ def read_beta_files(beta_dir):
                 stn[j] = struct.unpack('f', f.read(4))[0]
                 deldist[j] = struct.unpack('f', f.read(4))[0]
             df.loc[len(df)] = [stname, slat, slon, selev, evids, qmag, qlat, qlon, qdep, beta, stn, deldist]
-        
-        # event-organized
-        elif FMT_VERSION == 1:
-            event_id = f.read(20).decode('UTF-8').strip('\x00')
-            qmag = struct.unpack('f', f.read(4))[0]
-            qlat = struct.unpack('f', f.read(4))[0]
-            qlon = struct.unpack('f', f.read(4))[0]
-            qdep = struct.unpack('f', f.read(4))[0]
-
-            beta_method = f.read(30).decode('UTF-8')
-            stn_method = f.read(30).decode('UTF-8')
-            low_f_band = (struct.unpack('f', f.read(4))[0], 
-                          struct.unpack('f', f.read(4))[0])
-            high_f_band = (struct.unpack('f', f.read(4))[0],
-                           struct.unpack('f', f.read(4))[0])
-            nstations = struct.unpack('i', f.read(4))[0]
-            # print(f"{nstations} stations")
-
-            stname = np.zeros(nstations, dtype='<U20')
-            slat = np.zeros(nstations, dtype=float)
-            slon = np.zeros_like(slat)
-            selev = np.zeros_like(slat)
-            beta = np.zeros_like(slat)
-            stn = np.zeros_like(slat)
-            deldist = np.zeros_like(slat)
-            for j in range(nstations):
-                junk1 = struct.unpack('i', f.read(4))[0]
-                junk2 = struct.unpack('i', f.read(4))[0]
-                # print(junk1, junk2)
-                stname[j] = f.read(20).decode('UTF-8').strip('\x01\x00')
-                junk = struct.unpack('i', f.read(4))[0]
-                slat[j] = struct.unpack('f', f.read(4))[0]
-                slon[j] = struct.unpack('f', f.read(4))[0]
-                selev[j] = struct.unpack('f', f.read(4))[0]
-                beta[j] = struct.unpack('f', f.read(4))[0]
-                stn[j] = struct.unpack('f', f.read(4))[0]
-                deldist[j] = struct.unpack('f', f.read(4))[0]
-            df.loc[len(df)] = [event_id, qmag, qlat, qlon, qdep, nstations, stname, slat, slon, selev, beta, stn, deldist]
-        else: raise ValueError("Uh oh")
-        f.close()
     return df
 
 def write_beta_files(df, output_dir, ):
     """Reciprocal function to read_beta_files(). Writes .beta files to a 
     directory.
 
-    Now uses event-grouped DataFrame
-
     Args:
-        df (DataFrame): contains event-grouped data
+        df (DataFrame): contains station-grouped data
         output_dir (str): Path to save the binary .beta files
 
     Last Modified:
-        2024-10-08
+        2024-07-22
     """
 
     prec_wf='float32'
     prec_bp='int32'
 
     # Increment this if the format changes in the future
-    FMT_VERSION = int(1)
+    FMT_VERSION = int(0)
 
     for index, row in df.iterrows():
-        filepath = output_dir + str(row['event_id']) + ".beta"
+        filepath = output_dir + row['stname'] + ".beta"
 
-        # nevents = len(row['evids'])
-        nstations = len(row['stname'])
+        nevents = len(row['evids'])
 
         with open(filepath, 'wb') as f:
-        
-            # Write event data
+            # Write station header info
             f.write(struct.pack('i', 0))  # Junk
             f.write(struct.pack('i', FMT_VERSION))
-            f.write(struct.pack('20s', str(row['event_id']).encode('UTF-8')))
-            f.write(struct.pack('f', row['qmag']))
-            f.write(struct.pack('f', row['qlat']))
-            f.write(struct.pack('f', row['qlon']))
-            f.write(struct.pack('f', row['qdep']))
-
-            # write parameters
+            f.write(struct.pack('20s', row['stname'].encode('UTF-8')))
+            f.write(struct.pack('f', row['slat']))
+            f.write(struct.pack('f', row['slon']))
+            f.write(struct.pack('f', row['selev']))
             f.write(struct.pack('30s', row['beta_method'].encode('UTF-8')))
             f.write(struct.pack('30s', row['stn_method'].encode('UTF-8')))
             f.write(struct.pack('f', row['low_f_band'][0]))
             f.write(struct.pack('f', row['low_f_band'][1]))
             f.write(struct.pack('f', row['high_f_band'][0]))
             f.write(struct.pack('f', row['high_f_band'][1]))
-            f.write(struct.pack('i', nstations))
+            f.write(struct.pack('i', nevents))
 
             # Write a 4-byte spacer
             f.write(struct.pack('i', 0))
 
-            for j in range(nstations):
 
-                # Write station header info
+            # Write event data
+            for i in range(nevents):
+
                 f.write(struct.pack('ii', 3, 1))  # Junk
-                f.write(struct.pack('20s', row['stname'][j].encode('UTF-8')))
-                f.write(struct.pack('f', row['slat'][j]))
-                f.write(struct.pack('f', row['slon'][j]))
-                f.write(struct.pack('f', row['selev'][j]))
-                f.write(struct.pack('f', row['beta'][j]))
-                f.write(struct.pack('f', row['stn'][j]))
-                f.write(struct.pack('f', row['deldist'][j]))
-                # f.write(struct.pack('i', nevents))
+                f.write(struct.pack('20s', str(row['evids'][i]).encode('UTF-8')))
+                f.write(struct.pack('f', row['qmag'][i]))
+                f.write(struct.pack('f', row['qlat'][i]))
+                f.write(struct.pack('f', row['qlon'][i]))
+                f.write(struct.pack('f', row['qdep'][i]))
+                f.write(struct.pack('f', row['beta'][i]))
+                f.write(struct.pack('f', row['stn'][i]))
+                f.write(struct.pack('f', row['deldist'][i]))
 
                 # Write a 4-byte spacer
                 f.write(struct.pack('i', 0))
-
-
-
 
 
 def read_spec(filepath, prec_wf='float32', prec_bp='int32'):
@@ -274,34 +187,34 @@ def read_spec(filepath, prec_wf='float32', prec_bp='int32'):
 
     junk1 = struct.unpack('i', f.read(4))[0]
     junk2 = struct.unpack('i', f.read(4))[0]
-    ehead['efslabel']       = f.read(40).decode('UTF-8')
-    ehead['datasource']     = f.read(40).decode('UTF-8')
-    ehead['maxnumts']       = struct.unpack('i', f.read(4))[0]
-    ehead['numts']          = struct.unpack('i', f.read(4))[0]
-    ehead['cuspid']         = struct.unpack('i', f.read(4))[0]
-    ehead['qtype']          = f.read(4).decode('UTF-8')
-    ehead['qmag1type']      = f.read(4).decode('UTF-8')
-    ehead['qmag2type']      = f.read(4).decode('UTF-8')
-    ehead['qmag3type']      = f.read(4).decode('UTF-8')
-    ehead['qmomenttype']    = f.read(4).decode('UTF-8')
-    ehead['qlocqual']       = f.read(4).decode('UTF-8')
-    ehead['qfocalqual']     = f.read(4).decode('UTF-8')
-    ehead['qlat']           = struct.unpack('f', f.read(4))[0]
-    ehead['qlon']           = struct.unpack('f', f.read(4))[0]
-    ehead['qdep']           = struct.unpack('f', f.read(4))[0]
-    ehead['qsc']            = struct.unpack('f', f.read(4))[0]
-    ehead['qmag1']          = struct.unpack('f', f.read(4))[0]
-    ehead['qmag2']          = struct.unpack('f', f.read(4))[0]
-    ehead['qmag3']          = struct.unpack('f', f.read(4))[0]
-    ehead['qmoment']        = struct.unpack('f', f.read(4))[0]
-    ehead['qstrike']        = struct.unpack('f', f.read(4))[0]
-    ehead['qdip']           = struct.unpack('f', f.read(4))[0]
-    ehead['qrake']          = struct.unpack('f', f.read(4))[0]
-    ehead['qyr']            = struct.unpack('i', f.read(4))[0]
-    ehead['qmon']           = struct.unpack('i', f.read(4))[0]
-    ehead['qdy']            = struct.unpack('i', f.read(4))[0]
-    ehead['qhr']            = struct.unpack('i', f.read(4))[0]
-    ehead['qmn']            = struct.unpack('i', f.read(4))[0]
+    ehead['efslabel'] = f.read(40).decode('UTF-8')
+    ehead['datasource'] = f.read(40).decode('UTF-8')
+    ehead['maxnumts'] = struct.unpack('i', f.read(4))[0]
+    ehead['numts'] = struct.unpack('i', f.read(4))[0]
+    ehead['cuspid'] = struct.unpack('i', f.read(4))[0]
+    ehead['qtype'] = f.read(4).decode('UTF-8')
+    ehead['qmag1type'] = f.read(4).decode('UTF-8')
+    ehead['qmag2type'] = f.read(4).decode('UTF-8')
+    ehead['qmag3type'] = f.read(4).decode('UTF-8')
+    ehead['qmomenttype'] = f.read(4).decode('UTF-8')
+    ehead['qlocqual'] = f.read(4).decode('UTF-8')
+    ehead['qfocalqual'] = f.read(4).decode('UTF-8')
+    ehead['qlat'] = struct.unpack('f', f.read(4))[0]
+    ehead['qlon'] = struct.unpack('f', f.read(4))[0]
+    ehead['qdep'] = struct.unpack('f', f.read(4))[0]
+    ehead['qsc'] = struct.unpack('f', f.read(4))[0]
+    ehead['qmag1'] = struct.unpack('f', f.read(4))[0]
+    ehead['qmag2'] = struct.unpack('f', f.read(4))[0]
+    ehead['qmag3'] = struct.unpack('f', f.read(4))[0]
+    ehead['qmoment'] = struct.unpack('f', f.read(4))[0]
+    ehead['qstrike'] = struct.unpack('f', f.read(4))[0]
+    ehead['qdip'] = struct.unpack('f', f.read(4))[0]
+    ehead['qrake'] = struct.unpack('f', f.read(4))[0]
+    ehead['qyr'] = struct.unpack('i', f.read(4))[0]
+    ehead['qmon'] = struct.unpack('i', f.read(4))[0]
+    ehead['qdy'] = struct.unpack('i', f.read(4))[0]
+    ehead['qhr'] = struct.unpack('i', f.read(4))[0]
+    ehead['qmn'] = struct.unpack('i', f.read(4))[0]
 
     # 20 4-byte fields reserved for future uses - skip (80 bytes)
     for idum in range(0, 20):
@@ -384,321 +297,6 @@ def read_spec(filepath, prec_wf='float32', prec_bp='int32'):
 
     return shead, ehead, spec
 
-def read_spec_df(filepath):
-    """ only read certain fields. Need:
-    
-    event id, numts (actual, not ehead['numts']), qlat, qlon, qdep, qmag, qmag1type, spectra
-
-    """
-
-    f = open(filepath, 'rb')
-    f.seek(0, 2)
-    file_size = f.tell()
-    f.seek(0, 0)
-
-    spec = []
-
-    # read in file header info
-    f.seek(8, 0)
-    ntwind, nf = struct.unpack('2i', f.read(8))
-    f.seek(4,1)
-    dt, df = struct.unpack('2f', f.read(8))
-
-    # bytepos=28
-    
-    # bytes in one object in spec
-    tsbytes = (284 + 8 * (ntwind+nf))
-    nts = int(np.floor((file_size-300) / tsbytes))
-
-
-    f.seek(96, 1)
-    event_id = struct.unpack('i', f.read(4))[0]
-    f.seek(4, 1)
-    qmagtype = struct.unpack('4s', f.read(4))[0].decode('UTF-8')
-    f.seek(20, 1)
-    qlat, qlon, qdep = struct.unpack('3f', f.read(12))
-    f.seek(4, 1)
-    qmag = struct.unpack('f', f.read(4))[0]
-
-    # bytepos=176
-
-    f.seek(44+80, 1)
-    # should be at bytepos=300 here
-
-    # print(ntwind, nf, dt, df, nts, event_id, qmagtype, qlat, qlon, qdep, qmag)
-
-    X1 = [[]] * nts
-    X2 = [[]] * nts
-    S1 = [[]] * nts
-    S2 = [[]] * nts
-    stid = [[]] * nts
-    slat = [[]] * nts
-    slon = [[]] * nts
-    selev = [[]] * nts
-    deldist = [[]] * nts
-
-    ntfmt = f'{ntwind}f'
-    nffmt = f'{nf}f'
-    for i in range(nts):
-        f.seek(8, 1)
-
-        stname = f.read(8).decode('UTF-8').strip()
-        loccode = f.read(8).decode('UTF-8').strip()
-        f.seek(24, 1)
-        chnm = f.read(4).decode('UTF-8').strip()
-        net = f.read(4).decode('UTF-8').strip()
-
-        stid[i] = '.'.join([net, stname, loccode, chnm])
-
-        # print(stid)
-
-        f.seek(100,1)
-        slat[i], slon[i], selev[i], deldist[i] = struct.unpack('4f', f.read(16))
-        f.seek(112+ntwind*8, 1)
-        # X1[i] = np.array(struct.unpack(ntfmt, f.read(ntwind*4)), dtype=float)
-        # X2[i] = np.array(struct.unpack(ntfmt, f.read(ntwind*4)), dtype=float)
-        S1[i] = np.array(struct.unpack(nffmt, f.read(nf*4)), dtype=float)
-        S2[i] = np.array(struct.unpack(nffmt, f.read(nf*4)), dtype=float)
-    
-    D = {
-        'event_id':     event_id,
-        'nts':          nts,
-        'qlat':         qlat,
-        'qlon':         qlon,
-        'qdep':         qdep,
-        'qmag':         qmag,
-        'stid':         stid,
-        'slat':         slat,
-        'slon':         slon,
-        'selev':        selev,
-        'deldist':      deldist,
-        's1':           S1,
-        's2':           S2
-    }
-
-    df = pd.DataFrame(D)
-
-    return df
-
-def read_spec_max_df(filepath):
-    """ only read certain fields. Need:
-    
-    event id, numts (actual, not ehead['numts']), qlat, qlon, qdep, qmag, qmag1type, spectra
-
-    this also computes max amplitude - min amplitude of seismograms
-    """
-
-    f = open(filepath, 'rb')
-    f.seek(0, 2)
-    file_size = f.tell()
-    f.seek(0, 0)
-
-    spec = []
-
-    # read in file header info
-    f.seek(8, 0)
-    ntwind, nf = struct.unpack('2i', f.read(8))
-    f.seek(4,1)
-    dt, df = struct.unpack('2f', f.read(8))
-
-    # bytepos=28
-    
-    # bytes in one object in spec
-    tsbytes = (284 + 8 * (ntwind+nf))
-    nts = int(np.floor((file_size-300) / tsbytes))
-
-
-    f.seek(96, 1)
-    event_id = struct.unpack('i', f.read(4))[0]
-    f.seek(4, 1)
-    qmagtype = struct.unpack('4s', f.read(4))[0].decode('UTF-8')
-    f.seek(20, 1)
-    qlat, qlon, qdep = struct.unpack('3f', f.read(12))
-    f.seek(4, 1)
-    qmag = struct.unpack('f', f.read(4))[0]
-
-    # bytepos=176
-
-    f.seek(44+80, 1)
-    # should be at bytepos=300 here
-
-    # print(ntwind, nf, dt, df, nts, event_id, qmagtype, qlat, qlon, qdep, qmag)
-
-    # X1 = [[]] * nts
-    # X2 = [[]] * nts
-    X2_max = [[]] * nts
-    S1 = [[]] * nts
-    S2 = [[]] * nts
-    stid = [[]] * nts
-    slat = [[]] * nts
-    slon = [[]] * nts
-    selev = [[]] * nts
-    deldist = [[]] * nts
-
-    ntfmt = f'{ntwind}f'
-    nffmt = f'{nf}f'
-    for i in range(nts):
-        f.seek(8, 1)
-
-        stname = f.read(8).decode('UTF-8').strip()
-        loccode = f.read(8).decode('UTF-8').strip()
-        f.seek(24, 1)
-        chnm = f.read(4).decode('UTF-8').strip()
-        net = f.read(4).decode('UTF-8').strip()
-
-        stid[i] = '.'.join([net, stname, loccode, chnm])
-
-        # print(stid)
-
-        f.seek(100,1)
-        slat[i], slon[i], selev[i], deldist[i] = struct.unpack('4f', f.read(16))
-        # f.seek(112+ntwind*4, 1)
-        f.seek(112+ntwind*4, 1)
-        # X1[i] = np.array(struct.unpack(ntfmt, f.read(ntwind*4)), dtype=float)
-        X2 = np.diff(np.array(struct.unpack(ntfmt, f.read(ntwind*4)), dtype=float))
-        X2_max[i] = np.max(X2) - np.min(X2)
-        S1[i] = np.array(struct.unpack(nffmt, f.read(nf*4)), dtype=float)
-        S2[i] = np.array(struct.unpack(nffmt, f.read(nf*4)), dtype=float)
-        
-    D = {
-        'event_id':     event_id,
-        'nts':          nts,
-        'qlat':         qlat,
-        'qlon':         qlon,
-        'qdep':         qdep,
-        'qmag':         qmag,
-        'stid':         stid,
-        'slat':         slat,
-        'slon':         slon,
-        'selev':        selev,
-        'deldist':      deldist,
-        'a2_max':       X2_max,
-        's1':           S1,
-        's2':           S2
-    }
-
-    df = pd.DataFrame(D)
-
-    return df
-
-def write_spec(filepath, ehead, shead, spec, prec_wf='float32', prec_bp='int32'):
-    """Reciprocal function to readspec. Writes spectrum and associated 
-    information to a .spec file.
-
-    Args:
-        filepath (str): Path of the .spec file to generate
-        shead (_type_): Spectral method header info dict object. Should
-            contain ispec_method, ntwind, nf, twindoff, dt, and df.
-        spec (_type_): _description_
-        prec_wf (str, optional): _description_. Defaults to 'float32'.
-        prec_bp (str, optional): _description_. Defaults to 'int32'.
-
-    Sources:
-
-    Last Modified:
-        2023-10-30
-    """
-
-    with open(filepath, 'wb') as f:
-        # Write junk and shead
-        f.write(struct.pack('i', 0))  # Junk
-        f.write(struct.pack('i', shead['ispec_method']))
-        f.write(struct.pack('i', shead['ntwind']))
-        f.write(struct.pack('i', shead['nf']))
-        f.write(struct.pack('f', shead['twindoff']))
-        f.write(struct.pack('f', shead['dt']))
-        f.write(struct.pack('f', shead['df']))
-        
-        # Write junk and ehead
-        f.write(struct.pack('ii', 0, 0))  # Junk
-        f.write(struct.pack('40s',  ehead['efslabel'].encode('UTF-8').ljust(40)))
-        f.write(struct.pack('40s',  ehead['datasource'].encode('UTF-8').ljust(40)))
-        f.write(struct.pack('i',    ehead['maxnumts']))
-        f.write(struct.pack('i',    ehead['numts']))
-        f.write(struct.pack('i',    ehead['cuspid']))
-        f.write(struct.pack('4s',   ehead['qtype'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qmag1type'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qmag2type'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qmag3type'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qmomenttype'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qlocqual'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('4s',   ehead['qfocalqual'].encode('UTF-8').ljust(4)))
-        f.write(struct.pack('f',    ehead['qlat']))
-        f.write(struct.pack('f',    ehead['qlon']))
-        f.write(struct.pack('f',    ehead['qdep']))
-        f.write(struct.pack('f',    ehead['qsc']))
-        f.write(struct.pack('f',    ehead['qmag1']))
-        f.write(struct.pack('f',    ehead['qmag2']))
-        f.write(struct.pack('f',    ehead['qmag3']))
-        f.write(struct.pack('f',    ehead['qmoment']))
-        f.write(struct.pack('f',    ehead['qstrike']))
-        f.write(struct.pack('f',    ehead['qdip']))
-        f.write(struct.pack('f',    ehead['qrake']))
-        f.write(struct.pack('i',    ehead['qyr']))
-        f.write(struct.pack('i',    ehead['qmon']))
-        f.write(struct.pack('i',    ehead['qdy']))
-        f.write(struct.pack('i',    ehead['qhr']))
-        f.write(struct.pack('i',    ehead['qmn']))
-
-        # Write 20 4-byte fields reserved for future uses
-        for _ in range(20):
-            f.write(struct.pack('i', 0))
-
-        # Write time series data
-        for wv in spec:
-            f.write(struct.pack('ii', 3, 1))  # Junk
-            f.write(struct.pack('8s', wv['stname'].encode('UTF-8').ljust(8)))
-            f.write(struct.pack('8s', wv['loccode'].encode('UTF-8').ljust(8)))
-            f.write(struct.pack('8s', wv['datasource'].encode('UTF-8').ljust(8)))
-            f.write(struct.pack('8s', wv['sensor'].encode('UTF-8').ljust(8)))
-            f.write(struct.pack('8s', wv['units'].encode('UTF-8').ljust(8)))
-            f.write(struct.pack('4s', wv['chnm'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['stype'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['dva'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick1q'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick2q'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick3q'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick4q'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick1name'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick2name'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick3name'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['pick4name'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['ppolarity'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('4s', wv['problem'].encode('UTF-8').ljust(4)))
-            f.write(struct.pack('i',  wv['npts']))
-            f.write(struct.pack('i',  wv['syr']))
-            f.write(struct.pack('i',  wv['smon']))
-            f.write(struct.pack('i',  wv['sdy']))
-            f.write(struct.pack('i',  wv['shr']))
-            f.write(struct.pack('i',  wv['smn']))
-            f.write(struct.pack('f',  wv['compazi']))
-            f.write(struct.pack('f',  wv['compang']))
-            f.write(struct.pack('f',  wv['gain']))
-            f.write(struct.pack('f',  wv['f1']))
-            f.write(struct.pack('f',  wv['f2']))
-            f.write(struct.pack('f',  wv['dt']))
-            f.write(struct.pack('f',  wv['ssc']))
-            f.write(struct.pack('f',  wv['tdif']))
-            f.write(struct.pack('f',  wv['slat']))
-            f.write(struct.pack('f',  wv['slon']))
-            f.write(struct.pack('f',  wv['selev']))
-            f.write(struct.pack('f',  wv['deldist']))
-            f.write(struct.pack('f',  wv['sazi']))
-            f.write(struct.pack('f',  wv['qazi']))
-            f.write(struct.pack('f',  wv['pick1']))
-            f.write(struct.pack('f',  wv['pick2']))
-            f.write(struct.pack('f',  wv['pick3']))
-            f.write(struct.pack('f',  wv['pick4']))
-
-            # Write 22 4-byte fields reserved for future uses
-            for _ in range(22):
-                f.write(struct.pack('i', 0))
-
-            # Write the waveform data
-            np.array(wv['x1'], dtype=prec_wf).tofile(f)
-            np.array(wv['x2'], dtype=prec_wf).tofile(f)
-            np.array(wv['s1'], dtype=prec_wf).tofile(f)
-            np.array(wv['s2'], dtype=prec_wf).tofile(f)
 
 def convert_size(size_bytes):
    if size_bytes == 0:
@@ -830,63 +428,3 @@ def write_betatxt_files(df, filedir, low_f_band, high_f_band, beta_method, stn_m
                 # print(ln)
                 fp.write(ln)
     return
-
-
-# def write_beta_files(df, output_dir, ):
-#     """Reciprocal function to read_beta_files(). Writes .beta files to a 
-#     directory.
-
-#     Args:
-#         df (DataFrame): contains station-grouped data
-#         output_dir (str): Path to save the binary .beta files
-
-#     Last Modified:
-#         2024-07-22
-#     """
-
-#     prec_wf='float32'
-#     prec_bp='int32'
-
-#     # Increment this if the format changes in the future
-#     FMT_VERSION = int(0)
-
-#     for index, row in df.iterrows():
-#         filepath = output_dir + row['stname'] + ".beta"
-
-#         nevents = len(row['evids'])
-
-#         with open(filepath, 'wb') as f:
-#             # Write station header info
-#             f.write(struct.pack('i', 0))  # Junk
-#             f.write(struct.pack('i', FMT_VERSION))
-#             f.write(struct.pack('20s', row['stname'].encode('UTF-8')))
-#             f.write(struct.pack('f', row['slat']))
-#             f.write(struct.pack('f', row['slon']))
-#             f.write(struct.pack('f', row['selev']))
-#             f.write(struct.pack('30s', row['beta_method'].encode('UTF-8')))
-#             f.write(struct.pack('30s', row['stn_method'].encode('UTF-8')))
-#             f.write(struct.pack('f', row['low_f_band'][0]))
-#             f.write(struct.pack('f', row['low_f_band'][1]))
-#             f.write(struct.pack('f', row['high_f_band'][0]))
-#             f.write(struct.pack('f', row['high_f_band'][1]))
-#             f.write(struct.pack('i', nevents))
-
-#             # Write a 4-byte spacer
-#             f.write(struct.pack('i', 0))
-
-
-#             # Write event data
-#             for i in range(nevents):
-
-#                 f.write(struct.pack('ii', 3, 1))  # Junk
-#                 f.write(struct.pack('20s', str(row['evids'][i]).encode('UTF-8')))
-#                 f.write(struct.pack('f', row['qmag'][i]))
-#                 f.write(struct.pack('f', row['qlat'][i]))
-#                 f.write(struct.pack('f', row['qlon'][i]))
-#                 f.write(struct.pack('f', row['qdep'][i]))
-#                 f.write(struct.pack('f', row['beta'][i]))
-#                 f.write(struct.pack('f', row['stn'][i]))
-#                 f.write(struct.pack('f', row['deldist'][i]))
-
-#                 # Write a 4-byte spacer
-#                 f.write(struct.pack('i', 0))
