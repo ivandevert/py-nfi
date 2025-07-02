@@ -1,0 +1,14 @@
+For this exercise, I used a Bayesian inference method (PYMC) to estimate corner frequencies and uncertainties. The following are some notes about how the fitting was done:
+- For each spectra, I used the entirety of the spectrum in the 1-40Hz range.
+- I used the log-spaced spectra, weighting each data point equally.
+- I assume a weakly informative prior that the earthquake population has lognormally distributed stress drops (median of 5MPa, log10 standard deviation of 0.5)
+- I used this prior on stress drop, combined with magnitude information (converting local magnitude to moment magnitude following Trugman 2020), to create priors for corner frequency fC for each event (that is, larger events would have lower fC a-priori).
+- I assume a T-distributed likelihood function with a-priori unknown hyperparameters. The idea is that the misfit is likely to have fat tails, and is not Gaussian.
+- I am using a Brune model (not Boatright) with a fixed high-frequency falloff rate of 2. [I have a separate run with a free falloff rate if that is of interest].
+- I use the No-U-TurnS formulation of the Hamilton Monte Carlo Method to sample the posterior distribution, using 4 parallel chains with 2500 tuning and 2500 sampling steps.
+- The uncertainties reported in the readme file form a 95% posterior credibility interval.
+
+Let me know if you have any questions! Happy to share code.
+
+Daniel Trugman, October 2022
+

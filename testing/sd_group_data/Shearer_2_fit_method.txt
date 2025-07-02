@@ -1,0 +1,18 @@
+10/18/22
+
+This is an alterative to my preferred fit method as applied to the linear files.  In this case, the model is not forced to agree at low frequencies.  Instead, it is shifted higher or lower to give the best fit to the entire spectrum.  With this additional degree of freedom, this approach gives lower rms values than my preferred method, but does not fit the low-frequencies as well.  Because the low-frequencies are typically the best-resolved part of the observed spectrum, that seems less satisfactory.
+
+This fit method is applied to the linear files.  Everything is done using the log(amplitudes) that were provided.
+
+A Brune model is assumed with high-frequency falloff rate of 2.
+
+The data and synthetic are allowed to float with respect to each other, with the best scaling (shift in log amplitude) determined to give the minimum misfit over all the data points.
+
+The best-fitting model is obtained from the minimum rms residual (difference between data and prediction) over the 2 to 40 Hz band using a simple grid search over values of corner frequency.  
+
+As in my preferred method, the data are inversely weighted by 1/f so that the low frequency points contribute more to the fit.  This is done to make the fit more uniform in log space.
+
+The accompanying fit file shows:
+ID, f_c, fitrms
+
+I have not computed formal error estimates, but larger fitrms values are clearly associated with greater uncertainties.
