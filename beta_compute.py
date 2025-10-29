@@ -27,6 +27,9 @@ class BetaEstimator:
         mag_corr_dM         = 0.2,
         quiet               = False,
         save_dir            = None,
+        compute_uncertainty = True,
+        n_bootstrap         = 1000,
+        confidence_level    = 0.95
         ):
         if not quiet:
             print("Initializing BetaEstimator")
@@ -51,6 +54,9 @@ class BetaEstimator:
         self.mag_corr_dM = mag_corr_dM
         self.quiet = quiet
         self.save_dir = save_dir
+        self.compute_uncertainty = compute_uncertainty
+        self.n_bootstrap = n_bootstrap
+        self.confidence_level = confidence_level
         
         # Validate input
         self.validate_input()
@@ -399,6 +405,16 @@ class BetaEstimator:
         # Store NaNs, since we are looping and some might not be computed
         self.metadata_df['dlogbeta'] = np.nan
 
+        if self.compute_uncertainty:
+            self.metadata_df['dlogbeta_std'] = np.nan
+            self.metadata_df['dlogbeta_lower'] = np.nan
+            self.metadata_df['dlogbeta_upper'] = np.nan
+
+            # set confidence intervals for uncertainty
+            alpha = 1 - self.confidence_level
+            lower_percentile = 100 * (alpha / 2)
+            upper_percentile = 100 * (1 - alpha / 2)
+
         for i in trange(nevents, desc="Computing corrected logbeta"):
             # t0 = time.time()
             eid = eids[i]
@@ -494,8 +510,34 @@ class BetaEstimator:
                 # using numpy
                 t_logbeta = md_t['logbeta'].values[t_ind][v]
                 c_logbeta = md_c['logbeta'].values[c_ind]
+
+                differences = t_logbeta - c_logbeta
                 
-                self.metadata_df.loc[eid_inds, 'dlogbeta'] = np.median(t_logbeta - c_logbeta)
+                self.metadata_df.loc[eid_inds, 'dlogbeta'] = np.median(differences)
+
+                if self.compute_uncertainty:
+                    bootstrap_estimates = np.zeros(self.n_bootstrap)
+                    n_samples = len(differences)
+                    for b in range(self.n_bootstrap):
+                        resample_indices = np.random.choice(
+                            n_samples, size=n_samples, replace=True)
+                        resampled_differences = differences[resample_indices]
+                        bootstrap_estimates[b] = np.median(resampled_differences)
+                    
+                    self.metadata_df.loc[eid_inds, 'dlogbeta_std'] = np.std(bootstrap_estimates)
+                    self.metadata_df.loc[eid_inds, 'dlogbeta_lower'] = np.percentile(
+                        bootstrap_estimates, lower_percentile)
+                    self.metadata_df.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
+                        bootstrap_estimates, upper_percentile)
+                    
+                    # plt.figure(figsize=(10,5))
+                    # plt.hist(bootstrap_estimates, bins=np.linspace(-1.5, 1.5, 500))
+                    # plt.xlabel('dlogbeta')
+                    # plt.ylabel('Count')
+                    # plt.title(f'dlogbeta for event {eid} std = {np.std(bootstrap_estimates)}')
+                    # plt.show()
+                    # if i >= 20: raise ValueError()
+
 
         # drop rows with NaN dlogbeta
         self.metadata_df = self.metadata_df.dropna(subset=['dlogbeta']).reset_index(drop=True)
@@ -566,6 +608,9 @@ class BetaEstimator:
         fields=['event_name', 'emag', 'elon', 'elat', 'edep', 'dlogbeta', 'dlogbeta_corr'],
         fmt = '%8i %5.2f %15.11f %15.11f %7.3f %15.11f %15.11f'):
 
+        if self.compute_uncertainty:
+            fields=['event_name', 'emag', 'elon', 'elat', 'edep', 'dlogbeta', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'dlogbeta_corr']
+        
         np.savetxt(
             filename,
             self.metadata_ev[fields].values,
@@ -605,7 +650,7 @@ class BetaEstimator:
         ev_dep_columns = [
             'event_name', 'emag', 'elat', 'elon', 'edep', '_eid', 'event_id', 
             'evid', 'event', 'ex', 'ey', 'nts', 'dlogbeta', 'dlogbeta_corr',
-            'nrec'] # fix nts later
+            'nrec', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper'] # fix nts later
         sta_dep_columns = [
             'station_name', 'slat', 'slon', 'selev', '_sid', 'sx', 'sy', 'kappa0'
             ]
