@@ -4,233 +4,233 @@ import struct
 
 
 
-def read_beta_files(beta_dir):
-    """Read in all binary .beta files in a directory and return a DataFrame 
-    containing all data, with one line per station.
+# def read_beta_files(beta_dir):
+#     """Read in all binary .beta files in a directory and return a DataFrame 
+#     containing all data, with one line per station.
 
-    not true 
+#     not true 
 
-    Args:
-        beta_dir (str): Directory containing .beta files
+#     Args:
+#         beta_dir (str): Directory containing .beta files
 
-    Returns:
-        DataFrame: Pandas DataFrame containing station-grouped information.
+#     Returns:
+#         DataFrame: Pandas DataFrame containing station-grouped information.
 
-    Sources:
+#     Sources:
 
-    Last Modified:
-        2024-10-08
-    """
-    import os
-    try:
-        from tqdm import tqdm, trange
-        loopfunc = trange
-    except:
-        loopfunc = range
+#     Last Modified:
+#         2024-10-08
+#     """
+#     import os
+#     try:
+#         from tqdm import tqdm, trange
+#         loopfunc = trange
+#     except:
+#         loopfunc = range
 
-    beta_files = [el for el in os.listdir(beta_dir) if el.endswith('.beta')]
-    beta_files.sort()
-    nfiles = len(beta_files)
-    print(f"{nfiles} beta files found")
+#     beta_files = [el for el in os.listdir(beta_dir) if el.endswith('.beta')]
+#     beta_files.sort()
+#     nfiles = len(beta_files)
+#     print(f"{nfiles} beta files found")
 
-    # get format of files
-    filepath = beta_dir + beta_files[0]
-    f = open(filepath, 'rb')
-    f.seek(0, 2)
-    file_size = f.tell()
-    f.seek(0, 0)
-    _ = struct.unpack('i', f.read(4))[0]
-    FMT_VERSION = struct.unpack('i', f.read(4))[0]
-    f.close()
+#     # get format of files
+#     filepath = beta_dir + beta_files[0]
+#     f = open(filepath, 'rb')
+#     f.seek(0, 2)
+#     file_size = f.tell()
+#     f.seek(0, 0)
+#     _ = struct.unpack('i', f.read(4))[0]
+#     FMT_VERSION = struct.unpack('i', f.read(4))[0]
+#     f.close()
 
-    if FMT_VERSION==0:
-        df = pd.DataFrame({
-            "stname": pd.arrays.SparseArray(dtype="str", data=[]), 
-            "slat": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "slon": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "selev": pd.arrays.SparseArray(dtype="float", data=[]), 
+#     if FMT_VERSION==0:
+#         df = pd.DataFrame({
+#             "stname": pd.arrays.SparseArray(dtype="str", data=[]), 
+#             "slat": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "slon": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "selev": pd.arrays.SparseArray(dtype="float", data=[]), 
 
-            "event_id": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qmag": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qlat": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qlon": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "qdep": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "beta": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
-        })
+#             "event_id": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "qmag": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "qlat": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "qlon": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "qdep": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "beta": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
+#         })
 
-    if FMT_VERSION==1:
-        df = pd.DataFrame({
-            "event_id": pd.arrays.SparseArray(dtype="str", data=[]), 
-            "qmag": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qlat": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qlon": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "qdep": pd.arrays.SparseArray(dtype="float", data=[]), 
-            "nstations": pd.arrays.SparseArray(dtype="int", data=[]), 
+#     if FMT_VERSION==1:
+#         df = pd.DataFrame({
+#             "event_id": pd.arrays.SparseArray(dtype="str", data=[]), 
+#             "qmag": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "qlat": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "qlon": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "qdep": pd.arrays.SparseArray(dtype="float", data=[]), 
+#             "nstations": pd.arrays.SparseArray(dtype="int", data=[]), 
 
-            "stname": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "slat": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "slon": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "selev": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "logbeta": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
-            "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
-        })
+#             "stname": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "slat": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "slon": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "selev": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "logbeta": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "stn": pd.arrays.SparseArray(dtype="object", data=[]), 
+#             "deldist": pd.arrays.SparseArray(dtype="object", data=[]), 
+#         })
     
-    for i in loopfunc(nfiles):
-        filepath = beta_dir + beta_files[i]
+#     for i in loopfunc(nfiles):
+#         filepath = beta_dir + beta_files[i]
 
-        f = open(filepath, 'rb')
-        f.seek(0, 2)
-        file_size = f.tell()
-        f.seek(0, 0)
+#         f = open(filepath, 'rb')
+#         f.seek(0, 2)
+#         file_size = f.tell()
+#         f.seek(0, 0)
 
-        junk = struct.unpack('i', f.read(4))[0]
-        FMT_VERSION = struct.unpack('i', f.read(4))[0]
+#         junk = struct.unpack('i', f.read(4))[0]
+#         FMT_VERSION = struct.unpack('i', f.read(4))[0]
 
-        # station-organized
-        if FMT_VERSION == 0:
-            stname = f.read(20).decode('UTF-8').strip('\x00')
-            slat = struct.unpack('f', f.read(4))[0]
-            slon = struct.unpack('f', f.read(4))[0]
-            selev = struct.unpack('f', f.read(4))[0]
-            beta_method = f.read(30).decode('UTF-8')
-            stn_method = f.read(30).decode('UTF-8')
-            low_f_band = (struct.unpack('f', f.read(4))[0], 
-                          struct.unpack('f', f.read(4))[0])
-            high_f_band = (struct.unpack('f', f.read(4))[0],
-                           struct.unpack('f', f.read(4))[0])
-            nevents = struct.unpack('i', f.read(4))[0]
+#         # station-organized
+#         if FMT_VERSION == 0:
+#             stname = f.read(20).decode('UTF-8').strip('\x00')
+#             slat = struct.unpack('f', f.read(4))[0]
+#             slon = struct.unpack('f', f.read(4))[0]
+#             selev = struct.unpack('f', f.read(4))[0]
+#             beta_method = f.read(30).decode('UTF-8')
+#             stn_method = f.read(30).decode('UTF-8')
+#             low_f_band = (struct.unpack('f', f.read(4))[0], 
+#                           struct.unpack('f', f.read(4))[0])
+#             high_f_band = (struct.unpack('f', f.read(4))[0],
+#                            struct.unpack('f', f.read(4))[0])
+#             nevents = struct.unpack('i', f.read(4))[0]
 
-            evids = np.zeros(nevents, dtype='<U20')
-            qmag = np.zeros(nevents, dtype=float)
-            qlat = np.zeros_like(qmag)
-            qlon = np.zeros_like(qmag)
-            qdep = np.zeros_like(qmag)
-            beta = np.zeros_like(qmag)
-            stn = np.zeros_like(qmag)
-            deldist = np.zeros_like(qmag)
-            for j in range(nevents):
-                junk1 = struct.unpack('i', f.read(4))[0]
-                junk2 = struct.unpack('i', f.read(4))[0]
-                # print(junk1, junk2)
-                evids[j] = f.read(20).decode('UTF-8').strip('\x01\x00')
-                junk = struct.unpack('i', f.read(4))[0]
-                qmag[j] = struct.unpack('f', f.read(4))[0]
-                qlat[j] = struct.unpack('f', f.read(4))[0]
-                qlon[j] = struct.unpack('f', f.read(4))[0]
-                qdep[j] = struct.unpack('f', f.read(4))[0]
-                beta[j] = struct.unpack('f', f.read(4))[0]
-                stn[j] = struct.unpack('f', f.read(4))[0]
-                deldist[j] = struct.unpack('f', f.read(4))[0]
-            df.loc[len(df)] = [stname, slat, slon, selev, evids, qmag, qlat, qlon, qdep, beta, stn, deldist]
+#             evids = np.zeros(nevents, dtype='<U20')
+#             qmag = np.zeros(nevents, dtype=float)
+#             qlat = np.zeros_like(qmag)
+#             qlon = np.zeros_like(qmag)
+#             qdep = np.zeros_like(qmag)
+#             beta = np.zeros_like(qmag)
+#             stn = np.zeros_like(qmag)
+#             deldist = np.zeros_like(qmag)
+#             for j in range(nevents):
+#                 junk1 = struct.unpack('i', f.read(4))[0]
+#                 junk2 = struct.unpack('i', f.read(4))[0]
+#                 # print(junk1, junk2)
+#                 evids[j] = f.read(20).decode('UTF-8').strip('\x01\x00')
+#                 junk = struct.unpack('i', f.read(4))[0]
+#                 qmag[j] = struct.unpack('f', f.read(4))[0]
+#                 qlat[j] = struct.unpack('f', f.read(4))[0]
+#                 qlon[j] = struct.unpack('f', f.read(4))[0]
+#                 qdep[j] = struct.unpack('f', f.read(4))[0]
+#                 beta[j] = struct.unpack('f', f.read(4))[0]
+#                 stn[j] = struct.unpack('f', f.read(4))[0]
+#                 deldist[j] = struct.unpack('f', f.read(4))[0]
+#             df.loc[len(df)] = [stname, slat, slon, selev, evids, qmag, qlat, qlon, qdep, beta, stn, deldist]
         
-        # event-organized
-        elif FMT_VERSION == 1:
-            event_id = f.read(20).decode('UTF-8').strip('\x00')
-            qmag = struct.unpack('f', f.read(4))[0]
-            qlat = struct.unpack('f', f.read(4))[0]
-            qlon = struct.unpack('f', f.read(4))[0]
-            qdep = struct.unpack('f', f.read(4))[0]
+#         # event-organized
+#         elif FMT_VERSION == 1:
+#             event_id = f.read(20).decode('UTF-8').strip('\x00')
+#             qmag = struct.unpack('f', f.read(4))[0]
+#             qlat = struct.unpack('f', f.read(4))[0]
+#             qlon = struct.unpack('f', f.read(4))[0]
+#             qdep = struct.unpack('f', f.read(4))[0]
 
-            beta_method = f.read(30).decode('UTF-8')
-            stn_method = f.read(30).decode('UTF-8')
-            low_f_band = (struct.unpack('f', f.read(4))[0], 
-                          struct.unpack('f', f.read(4))[0])
-            high_f_band = (struct.unpack('f', f.read(4))[0],
-                           struct.unpack('f', f.read(4))[0])
-            nstations = struct.unpack('i', f.read(4))[0]
-            # print(f"{nstations} stations")
+#             beta_method = f.read(30).decode('UTF-8')
+#             stn_method = f.read(30).decode('UTF-8')
+#             low_f_band = (struct.unpack('f', f.read(4))[0], 
+#                           struct.unpack('f', f.read(4))[0])
+#             high_f_band = (struct.unpack('f', f.read(4))[0],
+#                            struct.unpack('f', f.read(4))[0])
+#             nstations = struct.unpack('i', f.read(4))[0]
+#             # print(f"{nstations} stations")
 
-            stname = np.zeros(nstations, dtype='<U20')
-            slat = np.zeros(nstations, dtype=float)
-            slon = np.zeros_like(slat)
-            selev = np.zeros_like(slat)
-            beta = np.zeros_like(slat)
-            stn = np.zeros_like(slat)
-            deldist = np.zeros_like(slat)
-            for j in range(nstations):
-                junk1 = struct.unpack('i', f.read(4))[0]
-                junk2 = struct.unpack('i', f.read(4))[0]
-                # print(junk1, junk2)
-                stname[j] = f.read(20).decode('UTF-8').strip('\x01\x00')
-                junk = struct.unpack('i', f.read(4))[0]
-                slat[j] = struct.unpack('f', f.read(4))[0]
-                slon[j] = struct.unpack('f', f.read(4))[0]
-                selev[j] = struct.unpack('f', f.read(4))[0]
-                beta[j] = struct.unpack('f', f.read(4))[0]
-                stn[j] = struct.unpack('f', f.read(4))[0]
-                deldist[j] = struct.unpack('f', f.read(4))[0]
-            df.loc[len(df)] = [event_id, qmag, qlat, qlon, qdep, nstations, stname, slat, slon, selev, beta, stn, deldist]
-        else: raise ValueError("Uh oh")
-        f.close()
-    return df
+#             stname = np.zeros(nstations, dtype='<U20')
+#             slat = np.zeros(nstations, dtype=float)
+#             slon = np.zeros_like(slat)
+#             selev = np.zeros_like(slat)
+#             beta = np.zeros_like(slat)
+#             stn = np.zeros_like(slat)
+#             deldist = np.zeros_like(slat)
+#             for j in range(nstations):
+#                 junk1 = struct.unpack('i', f.read(4))[0]
+#                 junk2 = struct.unpack('i', f.read(4))[0]
+#                 # print(junk1, junk2)
+#                 stname[j] = f.read(20).decode('UTF-8').strip('\x01\x00')
+#                 junk = struct.unpack('i', f.read(4))[0]
+#                 slat[j] = struct.unpack('f', f.read(4))[0]
+#                 slon[j] = struct.unpack('f', f.read(4))[0]
+#                 selev[j] = struct.unpack('f', f.read(4))[0]
+#                 beta[j] = struct.unpack('f', f.read(4))[0]
+#                 stn[j] = struct.unpack('f', f.read(4))[0]
+#                 deldist[j] = struct.unpack('f', f.read(4))[0]
+#             df.loc[len(df)] = [event_id, qmag, qlat, qlon, qdep, nstations, stname, slat, slon, selev, beta, stn, deldist]
+#         else: raise ValueError("Uh oh")
+#         f.close()
+#     return df
 
-def write_beta_files(df, output_dir, ):
-    """Reciprocal function to read_beta_files(). Writes .beta files to a 
-    directory.
+# def write_beta_files(df, output_dir, ):
+#     """Reciprocal function to read_beta_files(). Writes .beta files to a 
+#     directory.
 
-    Now uses event-grouped DataFrame
+#     Now uses event-grouped DataFrame
 
-    Args:
-        df (DataFrame): contains event-grouped data
-        output_dir (str): Path to save the binary .beta files
+#     Args:
+#         df (DataFrame): contains event-grouped data
+#         output_dir (str): Path to save the binary .beta files
 
-    Last Modified:
-        2024-10-08
-    """
+#     Last Modified:
+#         2024-10-08
+#     """
 
-    prec_wf='float32'
-    prec_bp='int32'
+#     prec_wf='float32'
+#     prec_bp='int32'
 
-    # Increment this if the format changes in the future
-    FMT_VERSION = int(1)
+#     # Increment this if the format changes in the future
+#     FMT_VERSION = int(1)
 
-    for index, row in df.iterrows():
-        filepath = output_dir + str(row['event_id']) + ".beta"
+#     for index, row in df.iterrows():
+#         filepath = output_dir + str(row['event_id']) + ".beta"
 
-        # nevents = len(row['evids'])
-        nstations = len(row['stname'])
+#         # nevents = len(row['evids'])
+#         nstations = len(row['stname'])
 
-        with open(filepath, 'wb') as f:
+#         with open(filepath, 'wb') as f:
         
-            # Write event data
-            f.write(struct.pack('i', 0))  # Junk
-            f.write(struct.pack('i', FMT_VERSION))
-            f.write(struct.pack('20s', str(row['event_id']).encode('UTF-8')))
-            f.write(struct.pack('f', row['qmag']))
-            f.write(struct.pack('f', row['qlat']))
-            f.write(struct.pack('f', row['qlon']))
-            f.write(struct.pack('f', row['qdep']))
+#             # Write event data
+#             f.write(struct.pack('i', 0))  # Junk
+#             f.write(struct.pack('i', FMT_VERSION))
+#             f.write(struct.pack('20s', str(row['event_id']).encode('UTF-8')))
+#             f.write(struct.pack('f', row['qmag']))
+#             f.write(struct.pack('f', row['qlat']))
+#             f.write(struct.pack('f', row['qlon']))
+#             f.write(struct.pack('f', row['qdep']))
 
-            # write parameters
-            f.write(struct.pack('30s', row['beta_method'].encode('UTF-8')))
-            f.write(struct.pack('30s', row['stn_method'].encode('UTF-8')))
-            f.write(struct.pack('f', row['low_f_band'][0]))
-            f.write(struct.pack('f', row['low_f_band'][1]))
-            f.write(struct.pack('f', row['high_f_band'][0]))
-            f.write(struct.pack('f', row['high_f_band'][1]))
-            f.write(struct.pack('i', nstations))
+#             # write parameters
+#             f.write(struct.pack('30s', row['beta_method'].encode('UTF-8')))
+#             f.write(struct.pack('30s', row['stn_method'].encode('UTF-8')))
+#             f.write(struct.pack('f', row['low_f_band'][0]))
+#             f.write(struct.pack('f', row['low_f_band'][1]))
+#             f.write(struct.pack('f', row['high_f_band'][0]))
+#             f.write(struct.pack('f', row['high_f_band'][1]))
+#             f.write(struct.pack('i', nstations))
 
-            # Write a 4-byte spacer
-            f.write(struct.pack('i', 0))
+#             # Write a 4-byte spacer
+#             f.write(struct.pack('i', 0))
 
-            for j in range(nstations):
+#             for j in range(nstations):
 
-                # Write station header info
-                f.write(struct.pack('ii', 3, 1))  # Junk
-                f.write(struct.pack('20s', row['stname'][j].encode('UTF-8')))
-                f.write(struct.pack('f', row['slat'][j]))
-                f.write(struct.pack('f', row['slon'][j]))
-                f.write(struct.pack('f', row['selev'][j]))
-                f.write(struct.pack('f', row['beta'][j]))
-                f.write(struct.pack('f', row['stn'][j]))
-                f.write(struct.pack('f', row['deldist'][j]))
-                # f.write(struct.pack('i', nevents))
+#                 # Write station header info
+#                 f.write(struct.pack('ii', 3, 1))  # Junk
+#                 f.write(struct.pack('20s', row['stname'][j].encode('UTF-8')))
+#                 f.write(struct.pack('f', row['slat'][j]))
+#                 f.write(struct.pack('f', row['slon'][j]))
+#                 f.write(struct.pack('f', row['selev'][j]))
+#                 f.write(struct.pack('f', row['beta'][j]))
+#                 f.write(struct.pack('f', row['stn'][j]))
+#                 f.write(struct.pack('f', row['deldist'][j]))
+#                 # f.write(struct.pack('i', nevents))
 
-                # Write a 4-byte spacer
-                f.write(struct.pack('i', 0))
+#                 # Write a 4-byte spacer
+#                 f.write(struct.pack('i', 0))
 
 
 
