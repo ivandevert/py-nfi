@@ -17,19 +17,19 @@ import matplotlib.pyplot as plt
 
 class BetaEstimator:
     def __init__(self, metadata_df, spectra, f,
-        low_window_desired     = (1.0, 5.0),
-        high_window_desired    = (15.0, 22.0),
-        calib_mag_range     = (1.4, 1.6),
-        calib_hdist_max     = 10.0,
-        calib_zdist_max     = 2.0,
-        n_calib_min         = 10,
-        mag_corr_method     = 'smoothedspline',
-        mag_corr_dM         = 0.2,
-        quiet               = False,
-        save_dir            = None,
-        compute_uncertainty = True,
-        n_bootstrap         = 1000,
-        confidence_level    = 0.95
+        low_window_desired      = (1.0, 5.0),
+        high_window_desired     = (15.0, 22.0),
+        calib_mag_range         = (1.4, 1.6),
+        calib_hdist_max         = 10.0,
+        calib_zdist_max         = 2.0,
+        calib_n_records_min     = 10,
+        mag_corr_method         = 'smoothedspline',
+        mag_corr_dM             = 0.2,
+        quiet                   = False,
+        save_dir                = None,
+        compute_uncertainty     = True,
+        n_bootstrap             = 1000,
+        confidence_level        = 0.95
         ):
         if not quiet:
             print("Initializing BetaEstimator")
@@ -49,7 +49,7 @@ class BetaEstimator:
         self.calib_mag_range = calib_mag_range
         self.calib_hdist_max = calib_hdist_max
         self.calib_zdist_max = calib_zdist_max
-        self.n_calib_min = n_calib_min
+        self.calib_n_records_min = calib_n_records_min
         self.mag_corr_method = mag_corr_method
         self.mag_corr_dM = mag_corr_dM
         self.quiet = quiet
@@ -376,8 +376,12 @@ class BetaEstimator:
             pkl.dump(self, fs)
     
     def save_fwf(self):
-        cols = ['event_name', 'emag', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_corr']
-        fmt = '%8i %5.2f %15.11f %15.11f %7.3f %5i %15.11f %15.11f'
+        if self.compute_uncertainty:
+            cols = ['event_name', 'emag', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'dlogbeta_corr']
+            fmt = '%8i %5.2f %15.11f %15.11f %7.3f %5i %15.11f %12.7e %12.7e %12.7e %15.11f'
+        else:
+            cols = ['event_name', 'emag', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_corr']
+            fmt = '%8i %5.2f %15.11f %15.11f %7.3f %5i %15.11f %15.11f'
         np.savetxt(f"{self.save_dir}/logbeta.txt", self.metadata_ev[cols].values, fmt=fmt)
 
     @staticmethod    
@@ -409,6 +413,7 @@ class BetaEstimator:
             self.metadata_df['dlogbeta_std'] = np.nan
             self.metadata_df['dlogbeta_lower'] = np.nan
             self.metadata_df['dlogbeta_upper'] = np.nan
+            self.metadata_df['dlogbeta_median'] = np.nan
 
             # set confidence intervals for uncertainty
             alpha = 1 - self.confidence_level
@@ -426,9 +431,11 @@ class BetaEstimator:
 
             # Store values we are about to use
             edep = md_t['edep'].values[0]
-            emag = md_t['emag'].values[0]
-            ex = md_t['ex'].values[0]
-            ey = md_t['ey'].values[0]
+            # emag = md_t['emag'].values[0]
+            # ex = md_t['ex'].values[0]
+            # ey = md_t['ey'].values[0]
+            elat = md_t['elat'].values[0]
+            elon = md_t['elon'].values[0]
 
             # Make a copy of the calibration event records DataFrame
             md_c = self.metadata_calib.copy()
@@ -443,31 +450,46 @@ class BetaEstimator:
                 ], axis=0)
             md_c = md_c[filt1].reset_index(drop=True)
 
+            n_md_c = len(md_c)
+
             # Now, md_c contains records of calibration events in the correct 
             # depth range and with the same stations as the target event
 
-            # rough square filter to avoid computing distances for all 
-            # calibration events (should be faster than computing distances
-            # for all events)
-            filt2 = np.all([
-                np.abs(md_c['ex'] - ex) <= self.calib_hdist_max*1000.0,
-                np.abs(md_c['ey'] - ey) <= self.calib_hdist_max*1000.0,
-            ], axis=0)
-            md_c = md_c[filt2].reset_index(drop=True)
+            #### OLD WAY BELOW ####
+            # # rough square filter to avoid computing distances for all 
+            # # calibration events (should be faster than computing distances
+            # # for all events)
+            # filt2 = np.all([
+            #     np.abs(md_c['ex'] - ex) <= self.calib_hdist_max*1000.0,
+            #     np.abs(md_c['ey'] - ey) <= self.calib_hdist_max*1000.0,
+            # ], axis=0)
+            # md_c = md_c[filt2].reset_index(drop=True)
 
-            # compute station-event distance of remaining calib events
-            # simple c = sqrt(a**2 + b**2) -- will need to change for larger regions
-            filt3 = np.sqrt((ex - md_c['ex'].values)**2 + (ey - md_c['ey'].values)**2) <= self.calib_hdist_max*1000
-            md_c = md_c[filt3].reset_index(drop=True)
+            # # compute station-event distance of remaining calib events
+            # # simple c = sqrt(a**2 + b**2) -- will need to change for larger regions
+            # filt3 = np.sqrt((ex - md_c['ex'].values)**2 + (ey - md_c['ey'].values)**2) <= self.calib_hdist_max*1000
+            # md_c = md_c[filt3].reset_index(drop=True)
+            #### END OLD WAY ####
+
+            # NEW WAY
+            # Compute distances between target event (elat, elon) and each
+            # calibration event (mc_c['elat'], mc_c['elon'])
+            dists = _haversine_km(
+                np.full(n_md_c, elat), 
+                np.full(n_md_c, elon), 
+                md_c['elat'].values, 
+                md_c['elon'].values)
+            md_c = md_c[dists <= self.calib_hdist_max].reset_index(drop=True)
+
 
             # # simplify md_c by removing unnecessary columns
             # md_c = md_c[['station_name','_eid', '_sid', 'logbeta']]
 
-            ncalib = len(md_c)
+            calib_n_records = len(md_c)
 
             
             # only compute dlogbeta if there are enough remaining calibration events
-            if ncalib >= self.n_calib_min:
+            if calib_n_records >= self.calib_n_records_min:
 
                 # t_pre_test = time.time() - t0
 
@@ -529,6 +551,7 @@ class BetaEstimator:
                         bootstrap_estimates, lower_percentile)
                     self.metadata_df.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
                         bootstrap_estimates, upper_percentile)
+                    self.metadata_df.loc[eid_inds, 'dlogbeta_median'] = np.median(bootstrap_estimates)
                     
                     # plt.figure(figsize=(10,5))
                     # plt.hist(bootstrap_estimates, bins=np.linspace(-1.5, 1.5, 500))
@@ -609,7 +632,7 @@ class BetaEstimator:
         fmt = '%8i %5.2f %15.11f %15.11f %7.3f %15.11f %15.11f'):
 
         if self.compute_uncertainty:
-            fields=['event_name', 'emag', 'elon', 'elat', 'edep', 'dlogbeta', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'dlogbeta_corr']
+            fields=['event_name', 'emag', 'elon', 'elat', 'edep', 'dlogbeta', 'dlogbeta_median', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'dlogbeta_corr']
         
         np.savetxt(
             filename,
@@ -650,7 +673,8 @@ class BetaEstimator:
         ev_dep_columns = [
             'event_name', 'emag', 'elat', 'elon', 'edep', '_eid', 'event_id', 
             'evid', 'event', 'ex', 'ey', 'nts', 'dlogbeta', 'dlogbeta_corr',
-            'nrec', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper'] # fix nts later
+            'nrec', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper',
+            'dlogbeta_median'] # fix nts later
         sta_dep_columns = [
             'station_name', 'slat', 'slon', 'selev', '_sid', 'sx', 'sy', 'kappa0'
             ]
@@ -828,4 +852,18 @@ def _get_id_from_column(df, column, id_name):
     df[id_name] = df[column].map(id_dict)
     return df, id_dict
 
+def _haversine_km(lon1, lat1, lon2, lat2):
+    """
+    Calculate the great circle distance in kilometers between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # convert decimal degrees to radians 
+    lon1r, lat1r, lon2r, lat2r = map(np.radians, [lon1, lat1, lon2, lat2])
 
+    # haversine formula 
+    dlonr = lon2r - lon1r 
+    dlatr = lat2r - lat1r 
+    a = np.sin(dlatr/2)**2 + np.cos(lat1r) * np.cos(lat2r) * np.sin(dlonr/2)**2
+    c = 2 * np.arcsin(np.sqrt(a)) 
+    r = 6371.0 # Radius of earth in kilometers. Use 3956 for miles. Determines return value units.
+    return c * r
