@@ -752,12 +752,12 @@ class BetaEstimator:
                 f" {np.median(self.df_records['deldist'])}")
         
         # Check for NaNs in spectra
-        assert np.sum(np.isnull(self.spectra)) == 0, \
+        assert np.sum(np.isnan(self.spectra)) == 0, \
             "Spectra contains NaNs."
         
         # Spectra should not be logarithmic:
         if np.median(
-            np.max(p_spectra, axis=1) / np.min(p_spectra, axis=1)
+            np.max(self.spectra, axis=1) / np.min(self.spectra, axis=1)
             ) < 10:
             raise Warning(
                 "Spectra should be linear but appear to be logarithmic."
