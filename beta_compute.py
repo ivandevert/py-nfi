@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 
 class BetaEstimator:
-    def __init__(self, metadata_df, spectra, f,
+    def __init__(self, df_records, spectra, f,
         low_window_desired      = (1.0, 5.0),
         high_window_desired     = (15.0, 22.0),
         calib_mag_range         = (1.4, 1.6),
@@ -35,12 +35,12 @@ class BetaEstimator:
             print("Initializing BetaEstimator")
             print("--------------------------")
 
-        excl = ['self', 'metadata_df', 'spectra', 'f']
+        excl = ['self', 'df_records', 'spectra', 'f']
         sig = inspect.signature(self.__init__)
         self.input_parameter_names = [k for k in sig.parameters if k not in excl]
         
         # Store parameters as attributes
-        self.metadata_df = metadata_df.copy()
+        self.df_records = df_records.copy()
         self.spectra = spectra
         self.f = f
         self.df = f[1] - f[0]
@@ -60,35 +60,36 @@ class BetaEstimator:
         
         # Validate input
         self.validate_input()
+        if not self.quiet: self.print_metadata_information()
 
         # Do some basic processing before computing logbeta
         self.digitize_names()
-        self.compute_eastings_northings()
+        # self.compute_eastings_northings()
         self.compute_column_dependencies()
 
         # Calculate actual indices and frequency bands for beta computation
         self.compute_frequency_bands()
+        if not self.quiet: self.print_frequency_information()
 
         # Get indices of calibration events
         self.store_calibration_events()
+        if not self.quiet: self.print_calibration_information()
 
         if not self.quiet:
             print("STATUS:")
-            print("Data loaded successfully. Run 'compute()' to continue.")
-            print("------------------------------------------------------")
-
-        # self.save_parameters()
+            print("BetaEstimator initialized successfully. Run 'compute()' to continue.")
+            print("--------------------------------------------------------------------")
 
     def update_nrec(self):
-        self.metadata_ev['nrec'] = self.metadata_ev['_sid'].apply(len)
+        self.df_events['nrec'] = self.df_events['_cid'].apply(len)
 
     def store_calibration_events(self):
         self.calibration_inds = np.where(np.logical_and(
-            self.metadata_df['emag'].values >= self.calib_mag_range[0], 
-            self.metadata_df['emag'].values <= self.calib_mag_range[1]
+            self.df_records['emag'].values >= self.calib_mag_range[0], 
+            self.df_records['emag'].values <= self.calib_mag_range[1]
             ))[0]
-        self.metadata_calib = self.metadata_df.iloc[self.calibration_inds].reset_index(drop=True)
-        if not self.quiet: self.print_calibration_information()
+        self.metadata_calib = self.df_records.iloc[self.calibration_inds].reset_index(drop=True)
+        
 
     def compute(self, recompute=False):
         params_filepath = f"{self.save_dir}/params.logbeta"
@@ -127,13 +128,13 @@ class BetaEstimator:
         if do_computation:
             self.compute_logbeta()
             self.store_calibration_events()
-            # if 'kappa0' not in self.metadata_df.columns:
-            #     self.metadata_df['kappa0'] = -999.0
+            # if 'kappa0' not in self.df_records.columns:
+            #     self.df_records['kappa0'] = -999.0
             self.compute_dlogbeta()
             self.apply_magnitude_correction(corr_type=self.mag_corr_method)
             self.store_calibration_events()
+            if not self.quiet: self.print_calibration_information()
             self.update_nrec()
-            # self.save_results(filename='data/beta_compute_out_test.txt')
             self.save_parameters()
             self.save_data()
             self.save_fwf()
@@ -172,11 +173,11 @@ class BetaEstimator:
         # 4) compute sum of square
 
         # remove kappa0 if they exist
-        if 'kappa0' in self.st_dep: self.st_dep.remove('kappa0')
-        if 'kappa0' in self.metadata_st.columns: self.metadata_st.drop('kappa0', axis=1, inplace=True)
+        if 'kappa0' in self.ch_dep: self.ch_dep.remove('kappa0')
+        if 'kappa0' in self.df_channels.columns: self.df_channels.drop('kappa0', axis=1, inplace=True)
         if 'kappa0' in self.metadata_calib.columns: self.metadata_calib.drop('kappa0', axis=1, inplace=True)
-        if 'kappa0' in self.metadata_ev.columns: self.metadata_ev.drop('kappa0', axis=1, inplace=True)
-        if 'kappa0' in self.metadata_df.columns: self.metadata_df.drop('kappa0', axis=1, inplace=True)
+        if 'kappa0' in self.df_events.columns: self.df_events.drop('kappa0', axis=1, inplace=True)
+        if 'kappa0' in self.df_records.columns: self.df_records.drop('kappa0', axis=1, inplace=True)
 
         # self.metadata_calib hold all RECORDS of calibration-sized events
         df_calib = self.metadata_calib.copy()
@@ -187,7 +188,7 @@ class BetaEstimator:
         print(f"{nrec-len(df_calib)} of {nrec} records removed for being too far away.")
 
         # df_sta_calib holds the same information, but grouped by station
-        df_sta_calib = df_calib.groupby(self.st_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+        df_sta_calib = df_calib.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
         nst = len(df_sta_calib)
 
         # remove rows if the range of deldist is less than range_min km
@@ -203,7 +204,7 @@ class BetaEstimator:
         # Do the same, but include events of all distances
         df_calib_all = self.metadata_calib.copy()
 
-        df_sta_calib_all = df_calib_all.groupby(self.st_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+        df_sta_calib_all = df_calib_all.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
 
         # remove rows if the range of deldist is less than range_min km
         df_sta_calib_all = df_sta_calib_all[df_sta_calib_all['deldist'].apply(max) - df_sta_calib_all['deldist'].apply(min) > range_min].reset_index(drop=True)
@@ -215,7 +216,7 @@ class BetaEstimator:
 
         # # only nearby events
         # metadata_calib_nearby = self.metadata_calib[self.metadata_calib['deldist'] <= d_nearby].reset_index(drop=True)
-        # df_sta_calib_nearby = metadata_calib_nearby.groupby(self.st_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+        # df_sta_calib_nearby = metadata_calib_nearby.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
 
 
         # # remove rows if the range of deldist is less than 30 km
@@ -338,8 +339,8 @@ class BetaEstimator:
                 ax1.set_xscale('log')
                 ax1.set_yscale('log')
 
-                # title: station_name | n= 
-                ax1.set_title(f"{row['station_name']} | n = {len(deldist)} | kappa0 = {kappa0[j]:5.3e}")
+                # title: channel_name | n= 
+                ax1.set_title(f"{row['channel_name']} | n = {len(deldist)} | kappa0 = {kappa0[j]:5.3e}")
                 ax1.set_xlabel('Frequency (Hz)')
                 ax1.set_xlim((self.f[1], 40))
                 ax1.set_ylim([mean_spec[1]/(10**yrange), mean_spec[1]*10])
@@ -355,18 +356,18 @@ class BetaEstimator:
                 plt.show()
         df_sta_calib_all['kappa0'] = kappa0
         
-        # print(self.metadata_st)
-        self.group_stations()
-        # self.df_sta = self.metadata_df.groupby(self.st_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+        # print(self.df_channels)
+        self.group_channels()
+        # self.df_sta = self.df_records.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
         # self.df_sta['kappa0'] = np.nan
         
 
-        df_kappa = df_sta_calib_all[['_sid', 'kappa0']]
+        df_kappa = df_sta_calib_all[['_cid', 'kappa0']]
         print(df_kappa)
 
-        self.metadata_st = pd.merge(self.metadata_st, df_kappa, how='left', on='_sid')
-        if 'kappa0' not in self.st_dep:
-            self.st_dep += ['kappa0']
+        self.df_channels = pd.merge(self.df_channels, df_kappa, how='left', on='_cid')
+        if 'kappa0' not in self.ch_dep:
+            self.ch_dep += ['kappa0']
         self.df_sta_calib = df_sta_calib_all
         return self
 
@@ -382,7 +383,7 @@ class BetaEstimator:
         else:
             cols = ['event_name', 'emag', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_corr']
             fmt = '%8i %5.2f %15.11f %15.11f %7.3f %5i %15.11f %15.11f'
-        np.savetxt(f"{self.save_dir}/logbeta.txt", self.metadata_ev[cols].values, fmt=fmt)
+        np.savetxt(f"{self.save_dir}/logbeta.txt", self.df_events[cols].values, fmt=fmt)
 
     @staticmethod    
     def load_data(save_dir):
@@ -403,17 +404,22 @@ class BetaEstimator:
     def compute_dlogbeta(self):
 
         # Correct path and station effects simultaneously (dlogbeta)
-        eids = np.unique(self.metadata_df['_eid'].values)
+        eids = np.unique(self.df_records['_eid'].values)
         nevents = len(eids)
 
         # Store NaNs, since we are looping and some might not be computed
-        self.metadata_df['dlogbeta'] = np.nan
+        self.df_records['dlogbeta'] = np.nan
 
         if self.compute_uncertainty:
-            self.metadata_df['dlogbeta_std'] = np.nan
-            self.metadata_df['dlogbeta_lower'] = np.nan
-            self.metadata_df['dlogbeta_upper'] = np.nan
-            self.metadata_df['dlogbeta_median'] = np.nan
+            self.df_records['dlogbeta_std'] = np.nan
+            self.df_records['dlogbeta_lower'] = np.nan
+            self.df_records['dlogbeta_upper'] = np.nan
+            self.df_records['dlogbeta_median'] = np.nan
+            self.pair_dep.extend([
+                'dlogbeta_std', 
+                'dlogbeta_lower', 
+                'dlogbeta_upper', 
+                'dlogbeta_median'])
 
             # set confidence intervals for uncertainty
             alpha = 1 - self.confidence_level
@@ -425,15 +431,12 @@ class BetaEstimator:
             eid = eids[i]
 
             # Store all entries of target event in md_t
-            eid_inds = self.metadata_df['_eid'] == eid
-            md_t = self.metadata_df[eid_inds]
-            md_t = md_t.sort_values(by='_sid') # is this necessary?
+            eid_inds = self.df_records['_eid'] == eid
+            md_t = self.df_records[eid_inds]
+            md_t = md_t.sort_values(by='_cid')
 
             # Store values we are about to use
             edep = md_t['edep'].values[0]
-            # emag = md_t['emag'].values[0]
-            # ex = md_t['ex'].values[0]
-            # ey = md_t['ey'].values[0]
             elat = md_t['elat'].values[0]
             elon = md_t['elon'].values[0]
 
@@ -442,11 +445,11 @@ class BetaEstimator:
 
             # Filter out calibration event records that:
             #   1) are too shallow or too deep
-            #   2) don't share stations with the target event
+            #   2) don't share channels with the target event
             filt1 = np.all([
                 md_c['edep']>=edep-self.calib_zdist_max, 
                 md_c['edep']<=edep+self.calib_zdist_max,
-                np.isin(md_c['_sid'].values, md_t['_sid'])
+                np.isin(md_c['_cid'].values, md_t['_cid'])
                 ], axis=0)
             md_c = md_c[filt1].reset_index(drop=True)
 
@@ -455,23 +458,6 @@ class BetaEstimator:
             # Now, md_c contains records of calibration events in the correct 
             # depth range and with the same stations as the target event
 
-            #### OLD WAY BELOW ####
-            # # rough square filter to avoid computing distances for all 
-            # # calibration events (should be faster than computing distances
-            # # for all events)
-            # filt2 = np.all([
-            #     np.abs(md_c['ex'] - ex) <= self.calib_hdist_max*1000.0,
-            #     np.abs(md_c['ey'] - ey) <= self.calib_hdist_max*1000.0,
-            # ], axis=0)
-            # md_c = md_c[filt2].reset_index(drop=True)
-
-            # # compute station-event distance of remaining calib events
-            # # simple c = sqrt(a**2 + b**2) -- will need to change for larger regions
-            # filt3 = np.sqrt((ex - md_c['ex'].values)**2 + (ey - md_c['ey'].values)**2) <= self.calib_hdist_max*1000
-            # md_c = md_c[filt3].reset_index(drop=True)
-            #### END OLD WAY ####
-
-            # NEW WAY
             # Compute distances between target event (elat, elon) and each
             # calibration event (mc_c['elat'], mc_c['elon'])
             dists = _haversine_km(
@@ -481,9 +467,8 @@ class BetaEstimator:
                 md_c['elon'].values)
             md_c = md_c[dists <= self.calib_hdist_max].reset_index(drop=True)
 
-
             # # simplify md_c by removing unnecessary columns
-            # md_c = md_c[['station_name','_eid', '_sid', 'logbeta']]
+            # md_c = md_c[['channel_name','_eid', '_cid', 'logbeta']]
 
             calib_n_records = len(md_c)
 
@@ -493,39 +478,39 @@ class BetaEstimator:
 
                 # t_pre_test = time.time() - t0
 
-                # Store stations that record target event
-                # t_sid_all = np.unique(md_t['_sid'].values)
-                t_sid_all = md_t['_sid'].values
-                # Store stations that record calibration events (some repeated)
-                c_sid_all = md_c['_sid'].values
+                # Store channels that record target event
+                # t_cid_all = np.unique(md_t['_cid'].values)
+                t_cid_all = md_t['_cid'].values
+                # Store channels that record calibration events (some repeated)
+                c_cid_all = md_c['_cid'].values
 
-                # Get indices of calibration events that share a station with target event
-                c_ind = np.where(np.isin(c_sid_all, t_sid_all))[0]
+                # Get indices of calibration events that share a channel with target event
+                c_ind = np.where(np.isin(c_cid_all, t_cid_all))[0]
                 
                 # now, all entries in md_c can be used in computing dlogbeta
                 # pandas method (slower)
                 # md_c = md_c.iloc[c_ind].reset_index(drop=True)
-                # c_sid = md_c['_sid'].values
+                # c_cid = md_c['_cid'].values
                 
                 # numpy method
-                c_sid = c_sid_all[c_ind]
+                c_cid = c_cid_all[c_ind]
 
-                # filter out entries in md_t that don't have a station in md_c
-                t_ind = np.where(np.isin(t_sid_all, c_sid))[0]
+                # filter out entries in md_t that don't have a channel in md_c
+                t_ind = np.where(np.isin(t_cid_all, c_cid))[0]
                 
                 # # pandas
                 # md_t = md_t.iloc[t_ind].reset_index(drop=True)
-                # t_sid = md_t['_sid'].values
+                # t_cid = md_t['_cid'].values
                 
                 # numpy
-                t_sid = t_sid_all[t_ind]
+                t_cid = t_cid_all[t_ind]
                 
-                # assert len(t_sid) == len(np.unique(t_sid))
+                # assert len(t_cid) == len(np.unique(t_cid))
 
                 # Match order
-                v = np.searchsorted(t_sid, c_sid)
+                v = np.searchsorted(t_cid, c_cid)
                 
-                # # using pandas
+                # # using pandas - slower?
                 # t_logbeta = md_t['logbeta'].values[v]
                 # c_logbeta = md_c['logbeta'].values
 
@@ -535,7 +520,7 @@ class BetaEstimator:
 
                 differences = t_logbeta - c_logbeta
                 
-                self.metadata_df.loc[eid_inds, 'dlogbeta'] = np.median(differences)
+                self.df_records.loc[eid_inds, 'dlogbeta'] = np.median(differences)
 
                 if self.compute_uncertainty:
                     bootstrap_estimates = np.zeros(self.n_bootstrap)
@@ -546,12 +531,12 @@ class BetaEstimator:
                         resampled_differences = differences[resample_indices]
                         bootstrap_estimates[b] = np.median(resampled_differences)
                     
-                    self.metadata_df.loc[eid_inds, 'dlogbeta_std'] = np.std(bootstrap_estimates)
-                    self.metadata_df.loc[eid_inds, 'dlogbeta_lower'] = np.percentile(
+                    self.df_records.loc[eid_inds, 'dlogbeta_std'] = np.std(bootstrap_estimates)
+                    self.df_records.loc[eid_inds, 'dlogbeta_lower'] = np.percentile(
                         bootstrap_estimates, lower_percentile)
-                    self.metadata_df.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
+                    self.df_records.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
                         bootstrap_estimates, upper_percentile)
-                    self.metadata_df.loc[eid_inds, 'dlogbeta_median'] = np.median(bootstrap_estimates)
+                    self.df_records.loc[eid_inds, 'dlogbeta_median'] = np.median(bootstrap_estimates)
                     
                     # plt.figure(figsize=(10,5))
                     # plt.hist(bootstrap_estimates, bins=np.linspace(-1.5, 1.5, 500))
@@ -563,7 +548,7 @@ class BetaEstimator:
 
 
         # drop rows with NaN dlogbeta
-        self.metadata_df = self.metadata_df.dropna(subset=['dlogbeta']).reset_index(drop=True)
+        self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
 
     def apply_magnitude_correction(self, corr_type='smoothedspline'):
         self.group_events()
@@ -573,8 +558,8 @@ class BetaEstimator:
 
             # Automatically determine the range of magnitude bins
             M_range = np.round((
-                np.floor(np.min(self.metadata_ev['emag'].values) / mag_corr_dM) * mag_corr_dM, 
-                np.ceil(np.max(self.metadata_ev['emag'].values) / mag_corr_dM) * mag_corr_dM
+                np.floor(np.min(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM, 
+                np.ceil(np.max(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM
                 ), 4) # fixes rounding errors
             
             # Define the edges and midpoints of the magnitude bins
@@ -582,16 +567,16 @@ class BetaEstimator:
             midpoints = (edges[:-1] + edges[1:])/2
 
             # drop events with emag lower than the first bin (interpolation issue?)
-            self.metadata_ev = self.metadata_ev[self.metadata_ev['emag']>=midpoints[0]].reset_index(drop=True)
+            self.df_events = self.df_events[self.df_events['emag']>=midpoints[0]].reset_index(drop=True)
 
             # Assign each target event to a magnitude bin
-            bin_inds = np.digitize(self.metadata_ev['emag'].values, edges) - 1
+            bin_inds = np.digitize(self.df_events['emag'].values, edges) - 1
 
             # Compute the median dlogbeta for each magnitude bin
             median_dlbeta = np.empty(len(edges)-1) * np.nan
             # print('computing median_dlbeta')
             for i in range(len(median_dlbeta)):
-                median_dlbeta[i] = np.median(self.metadata_ev['dlogbeta'].values[bin_inds==i])
+                median_dlbeta[i] = np.median(self.df_events['dlogbeta'].values[bin_inds==i])
 
             filter_window_len = int(np.floor(len(median_dlbeta)/4))
             polyorder = 3
@@ -603,20 +588,20 @@ class BetaEstimator:
             # print(f"Smoothing using Savgol filter with window length {filter_window_len} and polynomial order {polyorder}")
             realmids = midpoints[~naninds]
             median_dlbeta_smooth = savgol_filter(median_dlbeta[~naninds], filter_window_len, polyorder)
-            corrections = np.interp(self.metadata_ev['emag'].values, realmids, median_dlbeta_smooth)
+            corrections = np.interp(self.df_events['emag'].values, realmids, median_dlbeta_smooth)
             self.correction_mags = realmids
             self.correction_function = median_dlbeta_smooth
-            self.metadata_ev['dlogbeta_corr'] = self.metadata_ev['dlogbeta'].values - corrections
+            self.df_events['dlogbeta_corr'] = self.df_events['dlogbeta'].values - corrections
 
             # print("median_dlbeta[~naninds]: ", median_dlbeta[~naninds])
-            # print("num nan in emag: ", np.sum(np.isnan(self.metadata_ev['emag'].values)))
+            # print("num nan in emag: ", np.sum(np.isnan(self.df_events['emag'].values)))
             # print("realmids: ", realmids)
             # print("median_dlbeta_smooth: ", median_dlbeta_smooth)
             # print('num nan in corrections: ', np.sum(np.isnan(corrections)))
         
         self.pair_dep.append('dlogbeta_corr')
         self.explode_events()
-        self.group_stations()
+        self.group_channels()
 
     def plot_corrections(self):
         import matplotlib.pyplot as plt
@@ -636,61 +621,61 @@ class BetaEstimator:
         
         np.savetxt(
             filename,
-            self.metadata_ev[fields].values,
+            self.df_events[fields].values,
             fmt=fmt
         )
 
     def group_events(self):
         print("group_events()")
-        # group self.metadata_df by event dependent fields
+        # group self.df_records by event dependent fields
         self.compute_column_dependencies()
-        self.metadata_ev = self.metadata_df.groupby(self.ev_dep, as_index=False)[self.st_dep+self.pair_dep].agg(list)
+        self.df_events = self.df_records.groupby(self.ev_dep, as_index=False)[self.ch_dep+self.pair_dep].agg(list)
 
-    def group_stations(self):
-        print("group_stations()")
-        # group self.metadata_df by station dependent fields
+    def group_channels(self):
+        print("group_channels()")
+        # group self.df_records by channel-dependent fields
         self.compute_column_dependencies()
-        self.metadata_st = self.metadata_df.groupby(self.st_dep, as_index=False, dropna=False)[self.ev_dep+self.pair_dep].agg(list)
+        self.df_channels = self.df_records.groupby(self.ch_dep, as_index=False, dropna=False)[self.ev_dep+self.pair_dep].agg(list)
 
     def explode_events(self):
         print('explode_events()')
         self.compute_column_dependencies()
-        self.metadata_df = self.metadata_ev.explode(self.st_dep+self.pair_dep)
+        self.df_records = self.df_events.explode(self.ch_dep+self.pair_dep)
 
-    def explode_stations(self):
-        print('explode_stations()')
+    def explode_channels(self):
+        print('explode_channels()')
         self.compute_column_dependencies()
-        self.metadata_df = self.metadata_st.explode(self.ev_dep+self.pair_dep)
+        self.df_records = self.df_channels.explode(self.ev_dep+self.pair_dep)
 
     def compute_column_dependencies(self):
-        # Columns in self.metadata_df are 'dependent' in one of three ways:
+        # Columns in self.df_records are 'dependent' in one of three ways:
         #     1) event-dependent (e.g. EQ magnitude, EQ location, etc.)
-        #     2) station-dependent (e.g. station name, station location, etc.)
-        #     3) event-station pair-dependent (e.g. event-station distance, etc.)
+        #     2) channel-dependent (e.g. channel name, station location, etc.)
+        #     3) event-channel pair-dependent (e.g. event-station distance, etc.)
         # 
-        # This function checks the columns and updates ev_dep, st_dep, pair_dep
+        # This function checks the columns and updates ev_dep, ch_dep, pair_dep
         # class variables.
         ev_dep_columns = [
             'event_name', 'emag', 'elat', 'elon', 'edep', '_eid', 'event_id', 
             'evid', 'event', 'ex', 'ey', 'nts', 'dlogbeta', 'dlogbeta_corr',
             'nrec', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper',
             'dlogbeta_median'] # fix nts later
-        sta_dep_columns = [
-            'station_name', 'slat', 'slon', 'selev', '_sid', 'sx', 'sy', 'kappa0'
+        cha_dep_columns = [
+            'channel_name', 'slat', 'slon', 'selev', '_cid', 'sx', 'sy', 'kappa0'
             ]
         pair_dep_columns = [
             'logbeta', 'deldist', 'a2_max', 's1', 's2', 'stn'
             ]
-        columns = self.metadata_df.columns
+        columns = self.df_records.columns
         self.ev_dep = []
-        self.st_dep = []
+        self.ch_dep = []
         self.pair_dep = []
 
         for col in columns:
             if col in ev_dep_columns:
                 self.ev_dep.append(col)
-            elif col in sta_dep_columns:
-                self.st_dep.append(col)
+            elif col in cha_dep_columns:
+                self.ch_dep.append(col)
             elif col in pair_dep_columns:
                 self.pair_dep.append(col)
             else:
@@ -698,64 +683,98 @@ class BetaEstimator:
 
 
     def validate_input(self):
-        columns = self.metadata_df.columns
-        # rename columns
-        # check for an event name column
+        columns = self.df_records.columns
+        # Rename columns to standardized names. Conventions:
+        #     1) event-dependent quantities begin with e-
+        #     2) station/channel-dependent quantities begin with s-
+        #     3) event_name and channel_name are unique identifiers for
+        #        events and channels, respectively
+
+        ### Check column names and verify all required columns are present ###
+        # Check for an event_name column
         event_name_columns = ['event_id', 'evid', 'event']
         if 'event_name' not in columns:
             for col in event_name_columns:
                 if col in columns:
-                    self.metadata_df.rename(columns={col: 'event_name'}, inplace=True)
+                    self.df_records.rename(
+                        columns={col: 'event_name'}, inplace=True)
                     print("Renamed column {} to event_name".format(col))
                     break
+        if "event_name" not in columns:
+            raise ValueError("No event_name column found. Check input data.")
         
-        # check for a station name column
-        station_name_columns = ['station_id', 'sid', 'station', 'stname', 'st_name', 'stid']
-        if 'station_name' not in columns:
-            for col in station_name_columns:
+        # Check for a channel_name column
+        channel_name_columns = ['station_id', 'sid', 'station', 'stname', 
+                                'st_name', 'stid']
+        if 'channel_name' not in columns:
+            for col in channel_name_columns:
                 if col in columns:
-                    self.metadata_df.rename(columns={col: 'station_name'}, inplace=True)
-                    print("Renamed column {} to station_name".format(col))
+                    self.df_records.rename(
+                        columns={col: 'channel_name'}, inplace=True)
+                    print("Renamed column {} to channel_name".format(col))
                     break
+        if "channel_name" not in columns:
+            raise ValueError("No channel_name column found. Check input data.")
         
-        # change qmag, qlat, qlon, qdep into emag, elat, elon, edep
-
+        # Change qmag, qlat, qlon, qdep into emag, elat, elon, edep
         if 'qmag' in columns:
-            self.metadata_df.rename(columns={'qmag': 'emag'}, inplace=True)
-
+            self.df_records.rename(columns={'qmag': 'emag'}, inplace=True)
         if 'qlat' in columns:
-            self.metadata_df.rename(columns={'qlat': 'elat'}, inplace=True)
-
+            self.df_records.rename(columns={'qlat': 'elat'}, inplace=True)
         if 'qlon' in columns:
-            self.metadata_df.rename(columns={'qlon': 'elon'}, inplace=True)
-
+            self.df_records.rename(columns={'qlon': 'elon'}, inplace=True)
         if 'qdep' in columns:
-            self.metadata_df.rename(columns={'qdep': 'edep'}, inplace=True)
+            self.df_records.rename(columns={'qdep': 'edep'}, inplace=True)
 
-
+        # Check for required columns
         required_columns = [
-            'event_name', 'station_name', 'emag', 'elat', 'elon', 'edep', 
+            'event_name', 'channel_name', 'emag', 'elat', 'elon', 'edep', 
             'slat', 'slon', 'selev', 'deldist']
         for col in required_columns:
-            if col not in self.metadata_df.columns:
+            if col not in self.df_records.columns:
                 raise ValueError(f"Missing required column: {col}")
 
-        if len(self.metadata_df) != self.spectra.shape[0]:
-            raise ValueError("Metadata and spectra row counts do not match.")
+        ### Check some input data to make sure it's reasonable ###
 
-        self.nrecords_initial = len(self.metadata_df)
-        self.nevents_initial = len(self.metadata_df['event_name'].unique())
-        self.nstations_initial = len(self.metadata_df['station_name'].unique())
+        # Spectra shape and f array
+        if len(self.df_records) != self.spectra.shape[0]:
+            raise ValueError("Metadata and spectra row counts do not match.")
+        if len(self.f) != self.spectra.shape[1]:
+            raise ValueError(
+                f"Spectra width {self.spectra.shape[1]} does not match \
+                f array length {len(self.f)}.")
+
+        # Deldist should be in km
+        if (np.median(self.df_records['deldist']) > 100) or \
+            (np.median(self.df_records['deldist']) < 10):
+            raise Warning(
+                f"Is deldist in km? Median is" \
+                f" {np.median(self.df_records['deldist'])}")
+        
+        # Check for NaNs in spectra
+        assert np.sum(np.isnull(self.spectra)) == 0, \
+            "Spectra contains NaNs."
+        
+        # Spectra should not be logarithmic:
+        if np.median(
+            np.max(p_spectra, axis=1) / np.min(p_spectra, axis=1)
+            ) < 10:
+            raise Warning(
+                "Spectra should be linear but appear to be logarithmic."
+                )
+
+        # Store some initial counts
+        self.nrecords_initial = len(self.df_records)
+        self.nevents_initial = len(self.df_records['event_name'].unique())
+        self.nchannels_initial = len(self.df_records['channel_name'].unique())
 
         if self.save_dir is None: self.save_dir = 'tmp/'
         os.makedirs(self.save_dir, exist_ok=True)
 
-        if not self.quiet: self.print_metadata_information()
-
 
     def digitize_names(self):
-        self.metadata_df, self.event_name_dict = _get_id_from_column(self.metadata_df, 'event_name', '_eid')
-        self.metadata_df, self.station_name_dict = _get_id_from_column(self.metadata_df, 'station_name', '_sid')
+        self.df_records, self.event_name_dict = _get_id_from_column(self.df_records, 'event_name', '_eid')
+        self.df_records, self.channel_name_dict = _get_id_from_column(self.df_records, 'channel_name', '_cid')
 
     def compute_logbeta(self):
         # spectra is an (N x nf) array
@@ -764,19 +783,19 @@ class BetaEstimator:
         
         low_band = np.median(np.log10(self.spectra[:, low_inds[0]:low_inds[1]+1]), axis=1)
         high_band = np.median(np.log10(self.spectra[:, high_inds[0]:high_inds[1]+1]), axis=1)
-        self.metadata_df['logbeta'] = high_band - low_band
+        self.df_records['logbeta'] = high_band - low_band
         del self.spectra
     
-    def compute_eastings_northings(self):
-        # this will need to be improved for a larger area
-        self.metadata_df['sx'], self.metadata_df['sy'], zn, zl = utm.from_latlon(
-            self.metadata_df['slat'].values, 
-            self.metadata_df['slon'].values
-            )
-        self.metadata_df['ex'], self.metadata_df['ey'], zn, zl = utm.from_latlon(
-            self.metadata_df['elat'].values, 
-            self.metadata_df['elon'].values
-            )
+    # def compute_eastings_northings(self):
+    #     # this will need to be improved for a larger area
+    #     self.df_records['sx'], self.df_records['sy'], zn, zl = utm.from_latlon(
+    #         self.df_records['slat'].values, 
+    #         self.df_records['slon'].values
+    #         )
+    #     self.df_records['ex'], self.df_records['ey'], zn, zl = utm.from_latlon(
+    #         self.df_records['elat'].values, 
+    #         self.df_records['elon'].values
+    #         )
 
     def compute_frequency_bands(self):
         self.low_window_inds = _get_inds_of_values_in_array(self.f, self.low_window_desired)
@@ -784,7 +803,7 @@ class BetaEstimator:
 
         self.low_window = [self.f[self.low_window_inds[0]], self.f[self.low_window_inds[1]]]
         self.high_window = [self.f[self.high_window_inds[0]], self.f[self.high_window_inds[1]]]
-        if not self.quiet: self.print_frequency_information()
+        
 
 
     def print_frequency_information(self):
@@ -799,8 +818,8 @@ class BetaEstimator:
     def print_calibration_information(self):
         ncalib = len(self.metadata_calib['event_name'].unique())
         ncalibrec = len(self.metadata_calib)
-        nev = len(self.metadata_df['event_name'].unique())
-        nrec = len(self.metadata_df)
+        nev = len(self.df_records['event_name'].unique())
+        nrec = len(self.df_records)
         print("")
         print("CALIBRATION INFORMATION")
         print("----------------------------")
@@ -810,9 +829,9 @@ class BetaEstimator:
         print("")
 
     def print_metadata_information(self):
-        nev = len(self.metadata_df['event_name'].unique())
-        nst = len(self.metadata_df['station_name'].unique())
-        nrec = len(self.metadata_df)
+        nev = len(self.df_records['event_name'].unique())
+        nst = len(self.df_records['channel_name'].unique())
+        nrec = len(self.df_records)
         print("")
         print("METADATA INFORMATION")
         print("----------------------------")
@@ -821,10 +840,10 @@ class BetaEstimator:
         else:
             print(f"Events:   {nev:,} of {self.nevents_initial:,} inital ({nev/self.nevents_initial*100:.2f}%)")
 
-        if nst==self.nstations_initial:
-            print(f"Stations: {nst:,}")
+        if nst==self.nchannels_initial:
+            print(f"Channels: {nst:,}")
         else:
-            print(f"Stations: {nst:,} of {self.nstations_initial:,} inital ({nst/self.nstations_initial*100:.2f}%)")
+            print(f"Channels: {nst:,} of {self.nchannels_initial:,} inital ({nst/self.nchannels_initial*100:.2f}%)")
         
         if nrec==self.nrecords_initial:
             print(f"Records:  {nrec:,}")
