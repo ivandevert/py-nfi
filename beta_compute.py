@@ -16,7 +16,10 @@ import matplotlib.pyplot as plt
 
 
 class BetaEstimator:
-    def __init__(self, df_records, spectra, f,
+    def __init__(self, 
+        df_records, 
+        spectra, 
+        f,
         low_window_desired      = (1.0, 5.0),
         high_window_desired     = (15.0, 22.0),
         calib_mag_range         = (1.4, 1.6),
@@ -67,6 +70,9 @@ class BetaEstimator:
         # self.compute_eastings_northings()
         self.compute_column_dependencies()
 
+        # Create event/station metadata dicts
+        # self.compute_dicts()
+
         # Calculate actual indices and frequency bands for beta computation
         self.compute_frequency_bands()
         if not self.quiet: self.print_frequency_information()
@@ -89,7 +95,15 @@ class BetaEstimator:
             self.df_records['emag'].values <= self.calib_mag_range[1]
             ))[0]
         self.metadata_calib = self.df_records.iloc[self.calibration_inds].reset_index(drop=True)
-        
+    
+    # def compute_dicts(self):
+
+    #     # make a lookup dict for station locations station_name: (slon, slat, sele)
+    #     self.station_locations = dict(zip(all_sta_catalog['station_name'], zip(all_sta_catalog['slon'], all_sta_catalog['slat'], all_sta_catalog['sele'])))
+
+    #     # Make a lookup dict for event origins event_name: (elon, elat, edep, edatetime)
+    #     self.event_origins = dict(zip(eq_df['event_name'], zip(eq_df['elon'], eq_df['elat'], eq_df['edep'], eq_df['edatetime'])))
+
 
     def compute(self, recompute=False):
         params_filepath = f"{self.save_dir}/params.logbeta"
@@ -147,231 +161,6 @@ class BetaEstimator:
             # self.save_fwf()
             return loaded_instance
 
-
-    # this function is a work in progress (not working currently)
-    def estimate_kappa0(self, fc_fixed, d_nearby=40, range_min=20, n_min=50):
-
-        # CHECK DISTANCE CALCULATIONS
-        # far stations are still producing kappa0 results. deldist is station-event distance
-        print("\nKAPPA0 ESTIMATION")
-        print("----------------------------")
-        # first, setup grid of possible slopes
-        nM = 101
-        M = np.linspace(-0.3, 0.3, nM)
-
-        # d_nearby = 40
-        # range_min = 20
-        # n_min = 50
-
-        # for explanation plots
-        x_plot = np.linspace(0, 110, 100)
-
-        # For each slope: 
-        # 1) compute residuals of data points with line of slope M[i] and y-intercept 0
-        # 2) compute mean of residuals (maybe median?)
-        # 3) store y-intercepts
-        # 4) compute sum of square
-
-        # remove kappa0 if they exist
-        if 'kappa0' in self.ch_dep: self.ch_dep.remove('kappa0')
-        if 'kappa0' in self.df_channels.columns: self.df_channels.drop('kappa0', axis=1, inplace=True)
-        if 'kappa0' in self.metadata_calib.columns: self.metadata_calib.drop('kappa0', axis=1, inplace=True)
-        if 'kappa0' in self.df_events.columns: self.df_events.drop('kappa0', axis=1, inplace=True)
-        if 'kappa0' in self.df_records.columns: self.df_records.drop('kappa0', axis=1, inplace=True)
-
-        # self.metadata_calib hold all RECORDS of calibration-sized events
-        df_calib = self.metadata_calib.copy()
-
-        nrec = len(df_calib)
-        # Remove records that are too far
-        df_calib = df_calib[df_calib['deldist'] <= d_nearby].reset_index(drop=True)
-        print(f"{nrec-len(df_calib)} of {nrec} records removed for being too far away.")
-
-        # df_sta_calib holds the same information, but grouped by station
-        df_sta_calib = df_calib.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
-        nst = len(df_sta_calib)
-
-        # remove rows if the range of deldist is less than range_min km
-        df_sta_calib = df_sta_calib[df_sta_calib['deldist'].apply(max) - df_sta_calib['deldist'].apply(min) > range_min].reset_index(drop=True)
-        print(f"{nst-len(df_sta_calib)} of {nst} stations removed for having a distance range less than {range_min} km.")
-        nst = len(df_sta_calib)
-
-        # remove rows if there are fewer than 50 points
-        df_sta_calib = df_sta_calib[df_sta_calib['deldist'].apply(len) > n_min].reset_index(drop=True)
-        print(f"{nst-len(df_sta_calib)} of {nst} stations removed for having fewer than {n_min} points.")
-        print(f"{len(df_sta_calib)} stations remaining for kappa0 slope calibration.")
-
-        # Do the same, but include events of all distances
-        df_calib_all = self.metadata_calib.copy()
-
-        df_sta_calib_all = df_calib_all.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
-
-        # remove rows if the range of deldist is less than range_min km
-        df_sta_calib_all = df_sta_calib_all[df_sta_calib_all['deldist'].apply(max) - df_sta_calib_all['deldist'].apply(min) > range_min].reset_index(drop=True)
-
-        # remove rows if there are fewer than 50 points
-        df_sta_calib_all = df_sta_calib_all[df_sta_calib_all['deldist'].apply(len) > n_min].reset_index(drop=True)
-        print(f"{len(df_sta_calib_all)} stations remaining for kappa0 estimation.")
-        
-
-        # # only nearby events
-        # metadata_calib_nearby = self.metadata_calib[self.metadata_calib['deldist'] <= d_nearby].reset_index(drop=True)
-        # df_sta_calib_nearby = metadata_calib_nearby.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
-
-
-        # # remove rows if the range of deldist is less than 30 km
-        # df_sta_calib_nearby = df_sta_calib_nearby[df_sta_calib_nearby['deldist'].apply(max) - df_sta_calib_nearby['deldist'].apply(min) > range_min].reset_index(drop=True)
-
-        # # # remove rows if there are fewer than 50 points
-        # df_sta_calib_nearby = df_sta_calib_nearby[df_sta_calib_nearby['deldist'].apply(len) > n_min].reset_index(drop=True)
-
-        
-
-
-        Y0 = np.zeros((nM, len(df_sta_calib)), dtype=float)
-        errs = np.zeros(nM)
-        for i in trange(nM):
-            for j, row in df_sta_calib.iterrows():
-
-                # Store x and y data arrays
-                deldist = np.array(row['deldist'], dtype=float)
-                logbeta = np.array(row['logbeta'], dtype=float)
-                
-                # Compute residuals
-                res = M[i]*deldist - logbeta
-
-                # Store y-intercept
-                Y0[i, j] = np.mean(res)
-
-                # Compute shifted residuals (res2 should have zero mean)
-                res2 = res - Y0[i, j]
-
-                # Store the sum of error**2
-                # if np.isnan(errs[i]): errs[i] = 0
-                errs[i] += np.sum(res2**2)
-                # errs[i] += np.sum(np.abs(res2))
-
-        imin = np.argmin(errs)
-
-        # fit a parabola to nearest +/- 20 points around minimum using np.polyfit
-        X = M[imin-20:imin+20]
-        Y = errs[imin-20:imin+20]
-        p = np.polyfit(X, Y, 2)
-        mfit = -p[1]/(2*p[0])
-
-        print(f"Best-fit slope: {mfit:9.6f}")
-
-        # kappa0 computation
-        brune = 1 / (1 + (self.f/fc_fixed)**2)
-        logbeta_brune = self.compute_logbeta_static(brune.reshape((1,len(brune))), self.low_window_inds, self.high_window_inds)
-        print("logbeta_brune = ", logbeta_brune)
-        f_h = np.mean(self.high_window)
-        f_l = np.mean(self.low_window)
-
-
-
-        # recompute y0 using this best-fit slope
-        y0 = np.zeros(len(df_sta_calib_all), dtype=float)
-        kappa0 = np.zeros(len(df_sta_calib_all), dtype=float)
-        nev = np.zeros(len(df_sta_calib_all), dtype=int)
-        err = 0
-        for j, row in df_sta_calib_all.iterrows():
-            # Store x and y data arrays
-            deldist = np.array(row['deldist'], dtype=float)
-            logbeta = np.array(row['logbeta'], dtype=float)
-            nev[j] = len(deldist)
-            
-            # Compute residuals
-            res = logbeta - mfit*deldist
-
-            # Store y-intercept
-            y0[j] = np.mean(res)
-
-            # Compute shifted residuals (res2 should have zero mean)
-            res2 = res - y0[j]
-
-            # Store the sum of error**2
-            err += np.sum(res2**2)
-
-            # debug plots
-
-            # plt.figure()
-            # plt.scatter(deldist, logbeta, c='k', marker='.', s=1)
-            # plt.plot(x, mfit*x + y0[j], c='r', lw=2)
-            # plt.axhline(logbeta_brune, c='g', lw=2)
-            # plt.show()
-
-            kappa0[j] = (y0[j] - logbeta_brune) / (-np.pi * np.log10(np.e) * (f_h - f_l))
-
-            A0 = np.exp(-np.pi * kappa0[j] * self.f)
-
-            # Qex = np.exp()
-
-            # example plots
-            mean_spec = np.mean(np.array(row['s2']), axis=0)
-
-            shift = np.mean(brune[self.low_window_inds[0]:self.low_window_inds[1]+1]) / np.mean(mean_spec[self.low_window_inds[0]:self.low_window_inds[1]+1])
-
-            if j < 0:
-            # if kappa0[j] < 0:
-            # if kappa0[j] > 0.06:
-            # if kappa0[j] > 0.02 and kappa0[j] < 0.03:
-                yrange = 7
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8,4), layout='constrained')
-                ax1.plot(self.f, np.array(row['s2']).T, c='grey', lw=1, label='Calibration events')
-                ax1.plot(self.f, mean_spec, c='k', lw=2, label='Mean spectrum')
-                ax1.plot(self.f, brune / shift, c='r', lw=2, label='Brune')
-                # ax1.plot(self.f, A0 / shift, c='g', lw=2, label='exp(-pi*kappa0*f)')
-                ax1.axvline(self.f[1], c='k', lw=2)
-
-                # plot low window as rectangle
-                ax1.axvspan(self.low_window[0], self.low_window[1], color='grey', alpha=0.2)
-                ax1.axvspan(self.high_window[0], self.high_window[1], color='grey', alpha=0.2)
-                
-                #horizontal line in low band at y=logmean of mean spectrum
-                ax1.plot(self.low_window, np.ones(2) * 10**np.log10(np.mean(mean_spec[self.low_window_inds[0]:self.low_window_inds[1]+1])), color='k', linestyle='--', lw=2)
-                ax1.plot(self.low_window, np.ones(2) * 10**np.log10(np.mean(brune[self.low_window_inds[0]:self.low_window_inds[1]+1])/shift), color='r', linestyle='--', lw=2)
-
-                # same for high window
-                ax1.plot(self.high_window, np.ones(2) * 10**np.log10(np.mean(mean_spec[self.high_window_inds[0]:self.high_window_inds[1]+1])), color='k', linestyle='--', lw=2)
-                ax1.plot(self.high_window, np.ones(2) * 10**np.log10(np.mean(brune[self.high_window_inds[0]:self.high_window_inds[1]+1])/shift), color='r', linestyle='--', lw=2)
-
-                ax1.set_xscale('log')
-                ax1.set_yscale('log')
-
-                # title: channel_name | n= 
-                ax1.set_title(f"{row['channel_name']} | n = {len(deldist)} | kappa0 = {kappa0[j]:5.3e}")
-                ax1.set_xlabel('Frequency (Hz)')
-                ax1.set_xlim((self.f[1], 40))
-                ax1.set_ylim([mean_spec[1]/(10**yrange), mean_spec[1]*10])
-                handles, labels = ax1.get_legend_handles_labels()
-                by_label = dict(zip(labels, handles))
-                ax1.legend(by_label.values(), by_label.keys())
-
-                ax2.scatter(deldist, logbeta, c='k', marker='.', s=1)
-                ax2.plot(x_plot, mfit*x_plot + y0[j], c='r', lw=2)
-                # ax2.axhline(logbeta_brune, c='g', lw=2)
-                ax2.axhline(0, c='k', lw=2)
-
-                plt.show()
-        df_sta_calib_all['kappa0'] = kappa0
-        
-        # print(self.df_channels)
-        self.group_channels()
-        # self.df_sta = self.df_records.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
-        # self.df_sta['kappa0'] = np.nan
-        
-
-        df_kappa = df_sta_calib_all[['_cid', 'kappa0']]
-        print(df_kappa)
-
-        self.df_channels = pd.merge(self.df_channels, df_kappa, how='left', on='_cid')
-        if 'kappa0' not in self.ch_dep:
-            self.ch_dep += ['kappa0']
-        self.df_sta_calib = df_sta_calib_all
-        return self
-
-
     def save_data(self):
         with open(f"{self.save_dir}/data.logbeta", 'wb') as fs:
             pkl.dump(self, fs)
@@ -426,129 +215,193 @@ class BetaEstimator:
             lower_percentile = 100 * (alpha / 2)
             upper_percentile = 100 * (1 - alpha / 2)
 
+        # Pre-compute outside the loop
+        eid_groups = self.df_records.groupby('_eid')
+
+        # Vectorize depth filter on metadata_calib once
+        calib_edep = self.metadata_calib['edep'].values
+        calib_elat = self.metadata_calib['elat'].values
+        calib_elon = self.metadata_calib['elon'].values
+        calib_cid = self.metadata_calib['_cid'].values
+        calib_logbeta = self.metadata_calib['logbeta'].values
+
+        calib_event_name = self.metadata_calib['event_name'].values
+
+
+        # Pre-extract target event data as dict for faster access
+        target_data = {}
+        for eid in eids:
+            md_t = eid_groups.get_group(eid)
+            target_data[eid] = {
+                'edep': md_t['edep'].iloc[0],
+                'elat': md_t['elat'].iloc[0],
+                'elon': md_t['elon'].iloc[0],
+                'cids': md_t['_cid'].values,
+                'logbeta': md_t['logbeta'].values,
+                'indices': md_t.index.values  # Store original indices
+            }
+
+        # Pre-allocate results arrays for faster assignment
+        dlogbeta_results = np.full(len(self.df_records), np.nan)
+        if self.compute_uncertainty:
+            dlogbeta_std_results = np.full(len(self.df_records), np.nan)
+            dlogbeta_lower_results = np.full(len(self.df_records), np.nan)
+            dlogbeta_upper_results = np.full(len(self.df_records), np.nan)
+            dlogbeta_median_results = np.full(len(self.df_records), np.nan)
+
+
         for i in trange(nevents, desc="Computing corrected logbeta"):
-            # t0 = time.time()
+
             eid = eids[i]
-
-            # Store all entries of target event in md_t
-            eid_inds = self.df_records['_eid'] == eid
-            md_t = self.df_records[eid_inds]
-            md_t = md_t.sort_values(by='_cid')
-
-            # Store values we are about to use
-            edep = md_t['edep'].values[0]
-            elat = md_t['elat'].values[0]
-            elon = md_t['elon'].values[0]
-
-            # Make a copy of the calibration event records DataFrame
-            md_c = self.metadata_calib.copy()
-
-            # Filter out calibration event records that:
-            #   1) are too shallow or too deep
-            #   2) don't share channels with the target event
-            filt1 = np.all([
-                md_c['edep']>=edep-self.calib_zdist_max, 
-                md_c['edep']<=edep+self.calib_zdist_max,
-                np.isin(md_c['_cid'].values, md_t['_cid'])
-                ], axis=0)
-            md_c = md_c[filt1].reset_index(drop=True)
-
-            n_md_c = len(md_c)
-
-            # Now, md_c contains records of calibration events in the correct 
-            # depth range and with the same stations as the target event
-
-            # Compute distances between target event (elat, elon) and each
-            # calibration event (mc_c['elat'], mc_c['elon'])
-            dists = _haversine_km(
-                np.full(n_md_c, elat), 
-                np.full(n_md_c, elon), 
-                md_c['elat'].values, 
-                md_c['elon'].values)
-            md_c = md_c[dists <= self.calib_hdist_max].reset_index(drop=True)
-
-            # # simplify md_c by removing unnecessary columns
-            # md_c = md_c[['channel_name','_eid', '_cid', 'logbeta']]
-
-            calib_n_records = len(md_c)
-
+            td = target_data[eid]
+            # eid_inds = self.df_records['_eid'] == eid
             
-            # only compute dlogbeta if there are enough remaining calibration events
-            if calib_n_records >= self.calib_n_records_min:
+            # Use pre-grouped data (much faster than boolean indexing)
+            md_t = eid_groups.get_group(eid)
+            
+            # Extract values (already sorted by _cid from pre-sort)
+            # target_edep = md_t['edep'].iloc[0]
+            # target_elat = md_t['elat'].iloc[0]
+            # target_elon = md_t['elon'].iloc[0]
+            # target_cids = md_t['_cid'].values
+            
+            # Vectorized depth filter (no array allocation)
+            depth_mask = (calib_edep >= td['edep'] - self.calib_zdist_max) & \
+                         (calib_edep <= td['edep'] + self.calib_zdist_max)
+            
+            # Combined filter with channel match
+            channel_mask = np.isin(calib_cid, td['cids'])
+            combined_mask = depth_mask & channel_mask
+            
+            if not combined_mask.any():
+                continue
+            
+            # Apply mask once
+            filtered_elat = calib_elat[combined_mask]
+            filtered_elon = calib_elon[combined_mask]
+            filtered_event_name = calib_event_name[combined_mask]
 
-                # t_pre_test = time.time() - t0
+            # running_calib_mask = combined_mask.copy()
+            
+            # Compute distances only for filtered events
+            dists = _haversine_km(
+                np.full(len(filtered_elat), td['elat']),
+                np.full(len(filtered_elon), td['elon']),
+                filtered_elat,
+                filtered_elon
+            )
+            
+            # Distance filter
+            dist_mask = dists <= self.calib_hdist_max
+            
+            if dist_mask.sum() < self.calib_n_records_min:
+                continue
+            
+            # These mask indices are indices of self.metadata_calib
+            # that pass H/V distance to target, and are recorded by the same
+            # channel as the target
+            calib_mask_indices = np.where(combined_mask)[0][dist_mask]
+            c_cid = calib_cid[calib_mask_indices]
+            c_logbeta = calib_logbeta[calib_mask_indices]
+            
+            # This is unnecessary since all c_cid_filtered are in td['cids']
+            # # Match channels - simplified since we already have the data
+            # mask_c = np.isin(c_cid_filtered, td['cids'])
+            # c_cid = c_cid_filtered[mask_c]
+            # c_logbeta = c_logbeta_filtered[mask_c]
 
-                # Store channels that record target event
-                # t_cid_all = np.unique(md_t['_cid'].values)
-                t_cid_all = md_t['_cid'].values
-                # Store channels that record calibration events (some repeated)
-                c_cid_all = md_c['_cid'].values
+            # assert len(mask_c) == sum(mask_c), 'uh oh'
 
-                # Get indices of calibration events that share a channel with target event
-                c_ind = np.where(np.isin(c_cid_all, t_cid_all))[0]
-                
-                # now, all entries in md_c can be used in computing dlogbeta
-                # pandas method (slower)
-                # md_c = md_c.iloc[c_ind].reset_index(drop=True)
-                # c_cid = md_c['_cid'].values
-                
-                # numpy method
-                c_cid = c_cid_all[c_ind]
+            # End of depth, channel, and distance filtering. Now, check
+            # which records in td['cids'] are in c_cid
 
-                # filter out entries in md_t that don't have a channel in md_c
-                t_ind = np.where(np.isin(t_cid_all, c_cid))[0]
-                
-                # # pandas
-                # md_t = md_t.iloc[t_ind].reset_index(drop=True)
-                # t_cid = md_t['_cid'].values
-                
-                # numpy
-                t_cid = t_cid_all[t_ind]
-                
-                # assert len(t_cid) == len(np.unique(t_cid))
+            # Toss any record that doesn't have a calibration record at the
+            # same channel
+            mask_t = np.isin(td['cids'], c_cid)
+            t_cid = td['cids'][mask_t]
+            t_logbeta = td['logbeta'][mask_t]
+            
+            # Sort target data by channel ID for efficient matching
+            sorter = np.argsort(t_cid)
+            t_cid_sorted = t_cid[sorter]
+            t_logbeta_sorted = t_logbeta[sorter]
 
-                # Match order
-                v = np.searchsorted(t_cid, c_cid)
-                
-                # # using pandas - slower?
-                # t_logbeta = md_t['logbeta'].values[v]
-                # c_logbeta = md_c['logbeta'].values
+            # Find matching positions for calibration channels in sorted target data
+            v = np.searchsorted(t_cid_sorted, c_cid)
+            
+            # Compute all pairwise differences
+            differences = t_logbeta_sorted[v] - c_logbeta
 
-                # using numpy
-                t_logbeta = md_t['logbeta'].values[t_ind][v]
-                c_logbeta = md_c['logbeta'].values[c_ind]
+            # Group differences by channel (c_cid) and compute median for each
+            unique_channels, inverse_indices = np.unique(c_cid, return_inverse=True)
 
-                differences = t_logbeta - c_logbeta
-                
-                self.df_records.loc[eid_inds, 'dlogbeta'] = np.median(differences)
+            # Use reduceat for efficient grouped operations
+            sorted_order = np.argsort(inverse_indices)
+            sorted_diffs = differences[sorted_order]
+            sorted_inverse = inverse_indices[sorted_order]
 
-                if self.compute_uncertainty:
-                    bootstrap_estimates = np.zeros(self.n_bootstrap)
-                    n_samples = len(differences)
-                    for b in range(self.n_bootstrap):
-                        resample_indices = np.random.choice(
-                            n_samples, size=n_samples, replace=True)
-                        resampled_differences = differences[resample_indices]
-                        bootstrap_estimates[b] = np.median(resampled_differences)
-                    
-                    self.df_records.loc[eid_inds, 'dlogbeta_std'] = np.std(bootstrap_estimates)
-                    self.df_records.loc[eid_inds, 'dlogbeta_lower'] = np.percentile(
-                        bootstrap_estimates, lower_percentile)
-                    self.df_records.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
-                        bootstrap_estimates, upper_percentile)
-                    self.df_records.loc[eid_inds, 'dlogbeta_median'] = np.median(bootstrap_estimates)
-                    
-                    # plt.figure(figsize=(10,5))
-                    # plt.hist(bootstrap_estimates, bins=np.linspace(-1.5, 1.5, 500))
-                    # plt.xlabel('dlogbeta')
-                    # plt.ylabel('Count')
-                    # plt.title(f'dlogbeta for event {eid} std = {np.std(bootstrap_estimates)}')
-                    # plt.show()
-                    # if i >= 20: raise ValueError()
+            # Find split points where channel changes
+            split_indices = np.r_[0, np.where(np.diff(sorted_inverse) != 0)[0] + 1, len(sorted_inverse)]
+
+            # Split into channel groups
+            channel_groups = [sorted_diffs[split_indices[i]:split_indices[i+1]] for i in range(len(split_indices)-1)]
+
+            # Compute median for each channel group
+            channel_medians = np.array([np.median(el) for el in channel_groups], dtype=float)
+            channel_counts  = np.array([len(el) for el in channel_groups], dtype=int)
+
+            final_mask = channel_counts >= self.calib_n_records_min
+
+            if final_mask.sum() < 3:
+                continue
+
+            channel_medians = channel_medians[final_mask]
+            channel_counts = channel_counts[final_mask]
+
+            # print(channel_groups)
+            # print(channel_medians)
+            # print(channel_counts)
+
+            # plt.figure()
+            # plt.scatter(channel_medians, channel_counts, s=1, c='k')
+            # plt.show()
+            # if i > 20: raise ValueError()
+
+            # Final median of medians
+            median_diff = np.median(channel_medians)
+
+            # Assign to pre-allocated array
+            dlogbeta_results[td['indices']] = median_diff
 
 
+            if self.compute_uncertainty:
+                # bootstrap_estimates = np.zeros(self.n_bootstrap)
+                n_samples = len(channel_medians)
+                resample_indices = np.random.choice(
+                    n_samples, size=(self.n_bootstrap, n_samples), replace=True)
+                bootstrap_estimates = np.median(channel_medians[resample_indices], axis=1)
+
+
+                dlogbeta_std_results[td['indices']] = np.std(bootstrap_estimates)
+                dlogbeta_lower_results[td['indices']] = np.percentile(
+                    bootstrap_estimates, lower_percentile)
+                dlogbeta_upper_results[td['indices']] = np.percentile(
+                    bootstrap_estimates, upper_percentile)
+                dlogbeta_median_results[td['indices']] = np.median(bootstrap_estimates)
+
+            # DEBUGGING
+
+
+        
         # drop rows with NaN dlogbeta
-        self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
+        # self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
+        # Assign results back to DataFrame once at the end
+        self.df_records['dlogbeta'] = dlogbeta_results
+        if self.compute_uncertainty:
+            self.df_records['dlogbeta_std'] = dlogbeta_std_results
+            self.df_records['dlogbeta_lower'] = dlogbeta_lower_results
+            self.df_records['dlogbeta_upper'] = dlogbeta_upper_results
+            self.df_records['dlogbeta_median'] = dlogbeta_median_results
 
     def apply_magnitude_correction(self, corr_type='smoothedspline'):
         self.group_events()
@@ -700,7 +553,7 @@ class BetaEstimator:
                         columns={col: 'event_name'}, inplace=True)
                     print("Renamed column {} to event_name".format(col))
                     break
-        if "event_name" not in columns:
+        if "event_name" not in self.df_records.columns:
             raise ValueError("No event_name column found. Check input data.")
         
         # Check for a channel_name column
@@ -713,7 +566,7 @@ class BetaEstimator:
                         columns={col: 'channel_name'}, inplace=True)
                     print("Renamed column {} to channel_name".format(col))
                     break
-        if "channel_name" not in columns:
+        if "channel_name" not in self.df_records.columns:
             raise ValueError("No channel_name column found. Check input data.")
         
         # Change qmag, qlat, qlon, qdep into emag, elat, elon, edep
@@ -755,13 +608,14 @@ class BetaEstimator:
         assert np.sum(np.isnan(self.spectra)) == 0, \
             "Spectra contains NaNs."
         
-        # Spectra should not be logarithmic:
-        if np.median(
-            np.max(self.spectra, axis=1) / np.min(self.spectra, axis=1)
-            ) < 10:
-            raise Warning(
-                "Spectra should be linear but appear to be logarithmic."
-                )
+        # # Spectra should not be logarithmic:
+        # qnty = np.median(
+        #     np.max(self.spectra, axis=1) / np.min(self.spectra, axis=1)
+        #     )
+        # if qnty < 10:
+        #     raise Warning(
+        #         f"Spectra should be linear but appear to be logarithmic. {qnty:.4e}"
+        #         )
 
         # Store some initial counts
         self.nrecords_initial = len(self.df_records)
@@ -773,6 +627,14 @@ class BetaEstimator:
 
 
     def digitize_names(self):
+        # First, sort df_records:
+        self.df_records = self.df_records.sort_values(by=['event_name', 'channel_name'])
+        v = self.df_records.index.values
+        self.df_records = self.df_records.reset_index(drop=True)
+        
+        # Now, sort the spectra array
+        self.spectra = self.spectra[v, :]
+
         self.df_records, self.event_name_dict = _get_id_from_column(self.df_records, 'event_name', '_eid')
         self.df_records, self.channel_name_dict = _get_id_from_column(self.df_records, 'channel_name', '_cid')
 
@@ -857,6 +719,398 @@ class BetaEstimator:
         high_band = np.median(np.log10(spectra[:, high_f_ind[0]:high_f_ind[1]+1]), axis=1)
         logbeta = high_band - low_band
         return logbeta
+
+    # # this function is a work in progress (not working currently)
+    # def estimate_kappa0(self, fc_fixed, d_nearby=40, range_min=20, n_min=50):
+
+    #     # CHECK DISTANCE CALCULATIONS
+    #     # far stations are still producing kappa0 results. deldist is station-event distance
+    #     print("\nKAPPA0 ESTIMATION")
+    #     print("----------------------------")
+    #     # first, setup grid of possible slopes
+    #     nM = 101
+    #     M = np.linspace(-0.3, 0.3, nM)
+
+    #     # d_nearby = 40
+    #     # range_min = 20
+    #     # n_min = 50
+
+    #     # for explanation plots
+    #     x_plot = np.linspace(0, 110, 100)
+
+    #     # For each slope: 
+    #     # 1) compute residuals of data points with line of slope M[i] and y-intercept 0
+    #     # 2) compute mean of residuals (maybe median?)
+    #     # 3) store y-intercepts
+    #     # 4) compute sum of square
+
+    #     # remove kappa0 if they exist
+    #     if 'kappa0' in self.ch_dep: self.ch_dep.remove('kappa0')
+    #     if 'kappa0' in self.df_channels.columns: self.df_channels.drop('kappa0', axis=1, inplace=True)
+    #     if 'kappa0' in self.metadata_calib.columns: self.metadata_calib.drop('kappa0', axis=1, inplace=True)
+    #     if 'kappa0' in self.df_events.columns: self.df_events.drop('kappa0', axis=1, inplace=True)
+    #     if 'kappa0' in self.df_records.columns: self.df_records.drop('kappa0', axis=1, inplace=True)
+
+    #     # self.metadata_calib hold all RECORDS of calibration-sized events
+    #     df_calib = self.metadata_calib.copy()
+
+    #     nrec = len(df_calib)
+    #     # Remove records that are too far
+    #     df_calib = df_calib[df_calib['deldist'] <= d_nearby].reset_index(drop=True)
+    #     print(f"{nrec-len(df_calib)} of {nrec} records removed for being too far away.")
+
+    #     # df_sta_calib holds the same information, but grouped by station
+    #     df_sta_calib = df_calib.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+    #     nst = len(df_sta_calib)
+
+    #     # remove rows if the range of deldist is less than range_min km
+    #     df_sta_calib = df_sta_calib[df_sta_calib['deldist'].apply(max) - df_sta_calib['deldist'].apply(min) > range_min].reset_index(drop=True)
+    #     print(f"{nst-len(df_sta_calib)} of {nst} stations removed for having a distance range less than {range_min} km.")
+    #     nst = len(df_sta_calib)
+
+    #     # remove rows if there are fewer than 50 points
+    #     df_sta_calib = df_sta_calib[df_sta_calib['deldist'].apply(len) > n_min].reset_index(drop=True)
+    #     print(f"{nst-len(df_sta_calib)} of {nst} stations removed for having fewer than {n_min} points.")
+    #     print(f"{len(df_sta_calib)} stations remaining for kappa0 slope calibration.")
+
+    #     # Do the same, but include events of all distances
+    #     df_calib_all = self.metadata_calib.copy()
+
+    #     df_sta_calib_all = df_calib_all.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+
+    #     # remove rows if the range of deldist is less than range_min km
+    #     df_sta_calib_all = df_sta_calib_all[df_sta_calib_all['deldist'].apply(max) - df_sta_calib_all['deldist'].apply(min) > range_min].reset_index(drop=True)
+
+    #     # remove rows if there are fewer than 50 points
+    #     df_sta_calib_all = df_sta_calib_all[df_sta_calib_all['deldist'].apply(len) > n_min].reset_index(drop=True)
+    #     print(f"{len(df_sta_calib_all)} stations remaining for kappa0 estimation.")
+        
+
+    #     # # only nearby events
+    #     # metadata_calib_nearby = self.metadata_calib[self.metadata_calib['deldist'] <= d_nearby].reset_index(drop=True)
+    #     # df_sta_calib_nearby = metadata_calib_nearby.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+
+
+    #     # # remove rows if the range of deldist is less than 30 km
+    #     # df_sta_calib_nearby = df_sta_calib_nearby[df_sta_calib_nearby['deldist'].apply(max) - df_sta_calib_nearby['deldist'].apply(min) > range_min].reset_index(drop=True)
+
+    #     # # # remove rows if there are fewer than 50 points
+    #     # df_sta_calib_nearby = df_sta_calib_nearby[df_sta_calib_nearby['deldist'].apply(len) > n_min].reset_index(drop=True)
+
+        
+
+
+    #     Y0 = np.zeros((nM, len(df_sta_calib)), dtype=float)
+    #     errs = np.zeros(nM)
+    #     for i in trange(nM):
+    #         for j, row in df_sta_calib.iterrows():
+
+    #             # Store x and y data arrays
+    #             deldist = np.array(row['deldist'], dtype=float)
+    #             logbeta = np.array(row['logbeta'], dtype=float)
+                
+    #             # Compute residuals
+    #             res = M[i]*deldist - logbeta
+
+    #             # Store y-intercept
+    #             Y0[i, j] = np.mean(res)
+
+    #             # Compute shifted residuals (res2 should have zero mean)
+    #             res2 = res - Y0[i, j]
+
+    #             # Store the sum of error**2
+    #             # if np.isnan(errs[i]): errs[i] = 0
+    #             errs[i] += np.sum(res2**2)
+    #             # errs[i] += np.sum(np.abs(res2))
+
+    #     imin = np.argmin(errs)
+
+    #     # fit a parabola to nearest +/- 20 points around minimum using np.polyfit
+    #     X = M[imin-20:imin+20]
+    #     Y = errs[imin-20:imin+20]
+    #     p = np.polyfit(X, Y, 2)
+    #     mfit = -p[1]/(2*p[0])
+
+    #     print(f"Best-fit slope: {mfit:9.6f}")
+
+    #     # kappa0 computation
+    #     brune = 1 / (1 + (self.f/fc_fixed)**2)
+    #     logbeta_brune = self.compute_logbeta_static(brune.reshape((1,len(brune))), self.low_window_inds, self.high_window_inds)
+    #     print("logbeta_brune = ", logbeta_brune)
+    #     f_h = np.mean(self.high_window)
+    #     f_l = np.mean(self.low_window)
+
+
+
+    #     # recompute y0 using this best-fit slope
+    #     y0 = np.zeros(len(df_sta_calib_all), dtype=float)
+    #     kappa0 = np.zeros(len(df_sta_calib_all), dtype=float)
+    #     nev = np.zeros(len(df_sta_calib_all), dtype=int)
+    #     err = 0
+    #     for j, row in df_sta_calib_all.iterrows():
+    #         # Store x and y data arrays
+    #         deldist = np.array(row['deldist'], dtype=float)
+    #         logbeta = np.array(row['logbeta'], dtype=float)
+    #         nev[j] = len(deldist)
+            
+    #         # Compute residuals
+    #         res = logbeta - mfit*deldist
+
+    #         # Store y-intercept
+    #         y0[j] = np.mean(res)
+
+    #         # Compute shifted residuals (res2 should have zero mean)
+    #         res2 = res - y0[j]
+
+    #         # Store the sum of error**2
+    #         err += np.sum(res2**2)
+
+    #         # debug plots
+
+    #         # plt.figure()
+    #         # plt.scatter(deldist, logbeta, c='k', marker='.', s=1)
+    #         # plt.plot(x, mfit*x + y0[j], c='r', lw=2)
+    #         # plt.axhline(logbeta_brune, c='g', lw=2)
+    #         # plt.show()
+
+    #         kappa0[j] = (y0[j] - logbeta_brune) / (-np.pi * np.log10(np.e) * (f_h - f_l))
+
+    #         A0 = np.exp(-np.pi * kappa0[j] * self.f)
+
+    #         # Qex = np.exp()
+
+    #         # example plots
+    #         mean_spec = np.mean(np.array(row['s2']), axis=0)
+
+    #         shift = np.mean(brune[self.low_window_inds[0]:self.low_window_inds[1]+1]) / np.mean(mean_spec[self.low_window_inds[0]:self.low_window_inds[1]+1])
+
+    #         if j < 0:
+    #         # if kappa0[j] < 0:
+    #         # if kappa0[j] > 0.06:
+    #         # if kappa0[j] > 0.02 and kappa0[j] < 0.03:
+    #             yrange = 7
+    #             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8,4), layout='constrained')
+    #             ax1.plot(self.f, np.array(row['s2']).T, c='grey', lw=1, label='Calibration events')
+    #             ax1.plot(self.f, mean_spec, c='k', lw=2, label='Mean spectrum')
+    #             ax1.plot(self.f, brune / shift, c='r', lw=2, label='Brune')
+    #             # ax1.plot(self.f, A0 / shift, c='g', lw=2, label='exp(-pi*kappa0*f)')
+    #             ax1.axvline(self.f[1], c='k', lw=2)
+
+    #             # plot low window as rectangle
+    #             ax1.axvspan(self.low_window[0], self.low_window[1], color='grey', alpha=0.2)
+    #             ax1.axvspan(self.high_window[0], self.high_window[1], color='grey', alpha=0.2)
+                
+    #             #horizontal line in low band at y=logmean of mean spectrum
+    #             ax1.plot(self.low_window, np.ones(2) * 10**np.log10(np.mean(mean_spec[self.low_window_inds[0]:self.low_window_inds[1]+1])), color='k', linestyle='--', lw=2)
+    #             ax1.plot(self.low_window, np.ones(2) * 10**np.log10(np.mean(brune[self.low_window_inds[0]:self.low_window_inds[1]+1])/shift), color='r', linestyle='--', lw=2)
+
+    #             # same for high window
+    #             ax1.plot(self.high_window, np.ones(2) * 10**np.log10(np.mean(mean_spec[self.high_window_inds[0]:self.high_window_inds[1]+1])), color='k', linestyle='--', lw=2)
+    #             ax1.plot(self.high_window, np.ones(2) * 10**np.log10(np.mean(brune[self.high_window_inds[0]:self.high_window_inds[1]+1])/shift), color='r', linestyle='--', lw=2)
+
+    #             ax1.set_xscale('log')
+    #             ax1.set_yscale('log')
+
+    #             # title: channel_name | n= 
+    #             ax1.set_title(f"{row['channel_name']} | n = {len(deldist)} | kappa0 = {kappa0[j]:5.3e}")
+    #             ax1.set_xlabel('Frequency (Hz)')
+    #             ax1.set_xlim((self.f[1], 40))
+    #             ax1.set_ylim([mean_spec[1]/(10**yrange), mean_spec[1]*10])
+    #             handles, labels = ax1.get_legend_handles_labels()
+    #             by_label = dict(zip(labels, handles))
+    #             ax1.legend(by_label.values(), by_label.keys())
+
+    #             ax2.scatter(deldist, logbeta, c='k', marker='.', s=1)
+    #             ax2.plot(x_plot, mfit*x_plot + y0[j], c='r', lw=2)
+    #             # ax2.axhline(logbeta_brune, c='g', lw=2)
+    #             ax2.axhline(0, c='k', lw=2)
+
+    #             plt.show()
+    #     df_sta_calib_all['kappa0'] = kappa0
+        
+    #     # print(self.df_channels)
+    #     self.group_channels()
+    #     # self.df_sta = self.df_records.groupby(self.ch_dep, as_index=False)[self.ev_dep+self.pair_dep].agg(list)
+    #     # self.df_sta['kappa0'] = np.nan
+        
+
+    #     df_kappa = df_sta_calib_all[['_cid', 'kappa0']]
+    #     print(df_kappa)
+
+    #     self.df_channels = pd.merge(self.df_channels, df_kappa, how='left', on='_cid')
+    #     if 'kappa0' not in self.ch_dep:
+    #         self.ch_dep += ['kappa0']
+    #     self.df_sta_calib = df_sta_calib_all
+    #     return self
+
+    # def compute_dlogbeta_OLD(self):
+
+    #     # Correct path and station effects simultaneously (dlogbeta)
+    #     eids = np.unique(self.df_records['_eid'].values)
+    #     nevents = len(eids)
+
+    #     # Store NaNs, since we are looping and some might not be computed
+    #     self.df_records['dlogbeta'] = np.nan
+
+    #     if self.compute_uncertainty:
+    #         self.df_records['dlogbeta_std'] = np.nan
+    #         self.df_records['dlogbeta_lower'] = np.nan
+    #         self.df_records['dlogbeta_upper'] = np.nan
+    #         self.df_records['dlogbeta_median'] = np.nan
+    #         self.pair_dep.extend([
+    #             'dlogbeta_std', 
+    #             'dlogbeta_lower', 
+    #             'dlogbeta_upper', 
+    #             'dlogbeta_median'])
+
+    #         # set confidence intervals for uncertainty
+    #         alpha = 1 - self.confidence_level
+    #         lower_percentile = 100 * (alpha / 2)
+    #         upper_percentile = 100 * (1 - alpha / 2)
+
+    #     for i in trange(nevents, desc="Computing corrected logbeta"):
+
+    #         # t0 = time.time()
+    #         eid = eids[i]
+
+    #         # Store all entries of target event in md_t
+    #         eid_inds = self.df_records['_eid'] == eid
+    #         md_t = self.df_records[eid_inds]
+    #         md_t = md_t.sort_values(by='_cid')
+
+    #         # Store values we are about to use
+    #         edep = md_t['edep'].values[0]
+    #         elat = md_t['elat'].values[0]
+    #         elon = md_t['elon'].values[0]
+
+    #         # Make a copy of the calibration event records DataFrame
+    #         md_c = self.metadata_calib.copy()
+
+    #         # Filter out calibration event records that:
+    #         #   1) are too shallow or too deep
+    #         #   2) don't share channels with the target event
+    #         filt1 = np.all([
+    #             md_c['edep']>=edep-self.calib_zdist_max, 
+    #             md_c['edep']<=edep+self.calib_zdist_max,
+    #             np.isin(md_c['_cid'].values, md_t['_cid'])
+    #             ], axis=0)
+    #         md_c = md_c[filt1].reset_index(drop=True)
+
+    #         n_md_c = len(md_c)
+
+    #         # Now, md_c contains records of calibration events in the correct 
+    #         # depth range and with the same stations as the target event
+
+    #         # Compute distances between target event (elat, elon) and each
+    #         # calibration event (mc_c['elat'], mc_c['elon'])
+    #         dists = _haversine_km(
+    #             np.full(n_md_c, elat), 
+    #             np.full(n_md_c, elon), 
+    #             md_c['elat'].values, 
+    #             md_c['elon'].values)
+    #         md_c = md_c[dists <= self.calib_hdist_max].reset_index(drop=True)
+
+    #         # # simplify md_c by removing unnecessary columns
+    #         # md_c = md_c[['channel_name','_eid', '_cid', 'logbeta']]
+
+    #         calib_n_records = len(md_c)
+
+    #         # only compute dlogbeta if there are enough remaining calibration events
+    #         if calib_n_records >= self.calib_n_records_min:
+
+    #             #### THIS WORKS
+    #             # Store channels that record target event
+    #             # t_cid_all = np.unique(md_t['_cid'].values)
+    #             t_cid_all = md_t['_cid'].values
+    #             # Store channels that record calibration events (some repeated)
+    #             c_cid_all = md_c['_cid'].values
+
+    #             # Get indices of calibration events that share a channel with target event
+    #             c_ind = np.where(np.isin(c_cid_all, t_cid_all))[0]
+                
+    #             # now, all entries in md_c can be used in computing dlogbeta
+    #             # pandas method (slower)
+    #             # md_c = md_c.iloc[c_ind].reset_index(drop=True)
+    #             # c_cid = md_c['_cid'].values
+                
+    #             # numpy method
+    #             c_cid = c_cid_all[c_ind]
+
+    #             # filter out entries in md_t that don't have a channel in md_c
+    #             t_ind = np.where(np.isin(t_cid_all, c_cid))[0]
+                
+    #             # # pandas
+    #             # md_t = md_t.iloc[t_ind].reset_index(drop=True)
+    #             # t_cid = md_t['_cid'].values
+                
+    #             # numpy
+    #             t_cid = t_cid_all[t_ind]
+                
+    #             # assert len(t_cid) == len(np.unique(t_cid))
+
+    #             # Match order
+    #             v = np.searchsorted(t_cid, c_cid)
+                
+    #             # # using pandas - slower?
+    #             # t_logbeta = md_t['logbeta'].values[v]
+    #             # c_logbeta = md_c['logbeta'].values
+
+    #             # using numpy
+    #             t_logbeta = md_t['logbeta'].values[t_ind][v]
+    #             c_logbeta = md_c['logbeta'].values[c_ind]
+
+    #             differences = t_logbeta - c_logbeta
+                
+    #             self.df_records.loc[eid_inds, 'dlogbeta'] = np.median(differences)
+    #             #### END ORIGINAL
+
+
+
+    #             # # DEBUGGING
+    #             # tname = md_t['channel_name'].values[t_ind][v]
+    #             # cname = md_c['channel_name'].values[c_ind]
+
+    #             # tev = md_t['event_name'].values[t_ind][v]
+    #             # cev = md_c['event_name'].values[c_ind]
+
+
+    #             tname = md_t['channel_name'].values[mask_t][v]
+    #             cname = md_c['channel_name'].values[mask_c]
+
+    #             tev = md_t['event_name'].values[mask_t][v]
+    #             cev = md_c['event_name'].values[mask_c]
+
+    #             # assert all([tname[k] == cname[k] for k in range(len(differences))]), "Uh oh"
+
+
+
+    #             if self.compute_uncertainty:
+    #                 bootstrap_estimates = np.zeros(self.n_bootstrap)
+    #                 n_samples = len(differences)
+    #                 for b in range(self.n_bootstrap):
+    #                     resample_indices = np.random.choice(
+    #                         n_samples, size=n_samples, replace=True)
+    #                     resampled_differences = differences[resample_indices]
+    #                     bootstrap_estimates[b] = np.median(resampled_differences)
+                    
+    #                 self.df_records.loc[eid_inds, 'dlogbeta_std'] = np.std(bootstrap_estimates)
+    #                 self.df_records.loc[eid_inds, 'dlogbeta_lower'] = np.percentile(
+    #                     bootstrap_estimates, lower_percentile)
+    #                 self.df_records.loc[eid_inds, 'dlogbeta_upper'] = np.percentile(
+    #                     bootstrap_estimates, upper_percentile)
+    #                 self.df_records.loc[eid_inds, 'dlogbeta_median'] = np.median(bootstrap_estimates)
+                    
+    #                 # plt.figure(figsize=(10,5))
+    #                 # plt.hist(bootstrap_estimates, bins=np.linspace(-1.5, 1.5, 500))
+    #                 # plt.xlabel('dlogbeta')
+    #                 # plt.ylabel('Count')
+    #                 # plt.title(f'dlogbeta for event {eid} std = {np.std(bootstrap_estimates)}')
+    #                 # plt.show()
+    #                 # if i >= 20: raise ValueError()
+
+
+    #     # drop rows with NaN dlogbeta
+    #     self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
 
 
 def _get_inds_of_values_in_array(x, values):
