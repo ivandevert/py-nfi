@@ -10,7 +10,7 @@ To do list/notes:
  -  Check bootstrapping to make sure it is done correctly
  -  probably don't need to do bootstrap, have enough samples
 Last Modified:
-    2025-11-25
+    2026-01-07
 """
 
 import numpy as np
@@ -38,6 +38,7 @@ class BetaEstimator:
         mag_corr_method         = 'smoothedspline',
         mag_corr_dM             = 0.2,
         quiet                   = False,
+        print_time              = True,
         save_dir                = None,
         compute_uncertainty     = True,
         n_bootstrap             = 1000,
@@ -47,11 +48,13 @@ class BetaEstimator:
         calib_time_ndays        = 180,
         calib_time_n_nearest    = 25,
         ):
+        t0 = time.time()
 
         if not quiet: print("Initializing BetaEstimator")
         if not quiet: print("--------------------------")
 
-        excl = ['self', 'df_records', 'spectra', 'f']
+        excl = ['self', 'df_records', 'spectra', 'f', 'quiet', 'save_dir', 
+                'print_time']
         sig = inspect.signature(self.__init__)
         self.input_parameter_names = [k for k in sig.parameters if k not in excl]
         
@@ -73,7 +76,8 @@ class BetaEstimator:
         self.compute_uncertainty = compute_uncertainty
         self.n_bootstrap = n_bootstrap
         self.confidence_level = confidence_level
-        
+        self.print_time = print_time
+
         self.calib_time_filter = calib_time_filter
         self.calib_time_method = calib_time_method
         self.calib_time_ndays = calib_time_ndays
@@ -100,7 +104,7 @@ class BetaEstimator:
         if not self.quiet: self.print_calibration_information()
 
         self.fprint("STATUS:")
-        self.fprint("BetaEstimator initialized successfully. Run 'compute()' to continue.")
+        self.fprint(f"BetaEstimator initialized in {time.time()-t0:.4f} s. Run 'compute()' to continue.")
         self.fprint("--------------------------------------------------------------------")
 
     def update_nrec(self):
@@ -164,7 +168,8 @@ class BetaEstimator:
             self.store_calibration_events()
             # if 'kappa0' not in self.df_records.columns:
             #     self.df_records['kappa0'] = -999.0
-            self.compute_dlogbeta_testing()
+            self.group_events()
+            self.compute_dlogbeta()
             self.apply_magnitude_correction(corr_type=self.mag_corr_method)
             
             self.store_calibration_events()
@@ -186,10 +191,16 @@ class BetaEstimator:
             return loaded_instance
 
     def save_data(self):
+        t0 = time.time()
+        self.fprint(f"Saving data to {self.save_dir}/data.logbeta")
         with open(f"{self.save_dir}/data.logbeta", 'wb') as fs:
             pkl.dump(self, fs)
+        self.tprint(f"    |---> ({time.time()-t0:.2f}s)")
+        
     
     def save_fwf(self):
+        t0 = time.time()
+        self.fprint(f"Saving fixed-width format results to {self.save_dir}/logbeta.txt")
         if self.compute_uncertainty:
             cols = ['event_name', 'emag', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'dlogbeta_corr']
             fmt = '%12s %5.2f %15.11f %15.11f %7.3f %5i %15.11f %12.7e %12.7e %12.7e %15.11f'
@@ -203,6 +214,7 @@ class BetaEstimator:
             header=' '.join(cols),
             comments=''
         )
+        self.tprint(f"    |---> ({time.time()-t0:.2f}s)")
 
     @staticmethod    
     def load_data(save_dir):
@@ -210,12 +222,16 @@ class BetaEstimator:
             loaded_instance = pkl.load(fs)
         return loaded_instance
 
-    def save_parameters(self):        
+    def save_parameters(self):   
+        t0 = time.time()
+        self.fprint(f"Saving parameters to {self.save_dir}/params.logbeta")     
         params = {key: getattr(self, key) for key in self.input_parameter_names}
         with open(f"{self.save_dir}/params.logbeta", 'wb') as fs:
             pkl.dump(params, fs)
+        self.tprint(f"    |---> ({time.time()-t0:.2f}s)")
 
     def load_parameters(self):
+        self.fprint(f"Loading parameters from {self.save_dir}/params.logbeta")
         with open(f"{self.save_dir}/params.logbeta", 'rb') as fs:
             params = pkl.load(fs)
         return params
@@ -234,49 +250,63 @@ class BetaEstimator:
         """Correct path and station effects simultaneously (dlogbeta)
 
         Last Modified:
-            2025-11-24
+            2026-01-07
         """
 
-        eids = np.unique(self.df_records['_eid'].values)
+        # Store eids to process
+        eids = self.df_events['_eid'].values
         nevents = len(eids)
+        nrecords = len(self.df_records)
 
-        # Store NaNs, since we are looping and some might not be computed
-        # self.df_records['dlogbeta'] = np.nan # unnecessary?
-
+        # Prepare objects used in uncertainty computation, if needed
         if self.compute_uncertainty:
-            # self.df_records['dlogbeta_std'] = np.nan    # also unnecessary
-            # self.df_records['dlogbeta_lower'] = np.nan  # also unnecessary
-            # self.df_records['dlogbeta_upper'] = np.nan  # also unnecessary
-            # self.df_records['dlogbeta_median'] = np.nan # also unnecessary
+            c_event_name            = [[] for _ in range(nevents)]
+            c_dlogbeta_j_list       = [[] for _ in range(nevents)]
+            c_dlogbeta_j_res_list   = [[] for _ in range(nevents)]
+            c_ncalib_list           = [[] for _ in range(nevents)]
+            c_bearing_list          = [[] for _ in range(nevents)]
+            c_deldist_list          = [[] for _ in range(nevents)]
+            c_nrec_list             = [[] for _ in range(nevents)]
 
-            # set confidence intervals for uncertainty
-            alpha = 1 - self.confidence_level
-            lower_percentile = 100 * (alpha / 2)
-            upper_percentile = 100 * (1 - alpha / 2)
+            # These are for debugging (can remove later)
+            c_slat_list             = [[] for _ in range(nevents)]
+            c_slon_list             = [[] for _ in range(nevents)]
+            c_station_name_list     = [[] for _ in range(nevents)]
 
-        # Pre-compute outside the loop
-        eid_groups = self.df_records.groupby('_eid')
+            # These will be stored back in df_records
+            dlogbeta_std_results    = np.full(nrecords, np.nan)
+            dlogbeta_lower_results  = np.full(nrecords, np.nan)
+            dlogbeta_upper_results  = np.full(nrecords, np.nan)
+            dlogbeta_median_results = np.full(nrecords, np.nan)
 
-        # Vectorize depth filter on metadata_calib once
-        calib_edep = self.metadata_calib['edep'].values
-        calib_elat = self.metadata_calib['elat'].values
-        calib_elon = self.metadata_calib['elon'].values
-        calib_cid = self.metadata_calib['_cid'].values
-        calib_logbeta = self.metadata_calib['logbeta'].values
+            # Compute confidence intervals
+            alpha                   = 1 - self.confidence_level
+            lower_percentile        = 100 * (alpha / 2)
+            upper_percentile        = 100 * (1 - alpha / 2)
 
-        calib_event_name = self.metadata_calib['event_name'].values
+        # Pre-compute groups of records with same _eid outside the loop
+        eid_groups          = self.df_records.groupby('_eid')
 
-        # Pre-extract time data if time filtering is enabled
-        if self.calib_time_filter:
-            calib_etime = self.metadata_calib['etime'].values
+        # Store calibration event metadata as arrays for faster access
+        calib_edep          = self.metadata_calib['edep'].values
+        calib_elat          = self.metadata_calib['elat'].values
+        calib_elon          = self.metadata_calib['elon'].values
+        calib_cid           = self.metadata_calib['_cid'].values
+        calib_slat          = self.metadata_calib['slat'].values
+        calib_slon          = self.metadata_calib['slon'].values
+        calib_logbeta       = self.metadata_calib['logbeta'].values
+        # calib_event_name    = self.metadata_calib['event_name'].values
 
         # Pre-extract target event data as dict for faster access
         target_data = {}
-
         if self.calib_time_filter:
+            # Pre-extract time data
+            calib_etime = self.metadata_calib['etime'].values
+
             for eid in eids:
                 md_t = eid_groups.get_group(eid)
                 target_data[eid] = {
+                    'event_name': md_t['event_name'].iloc[0],
                     'edep': md_t['edep'].iloc[0],
                     'elat': md_t['elat'].iloc[0],
                     'elon': md_t['elon'].iloc[0],
@@ -289,6 +319,7 @@ class BetaEstimator:
             for eid in eids:
                 md_t = eid_groups.get_group(eid)
                 target_data[eid] = {
+                    'event_name': md_t['event_name'].iloc[0],
                     'edep': md_t['edep'].iloc[0],
                     'elat': md_t['elat'].iloc[0],
                     'elon': md_t['elon'].iloc[0],
@@ -298,47 +329,44 @@ class BetaEstimator:
                 }
 
         # Pre-allocate results arrays for faster assignment
-        dlogbeta_results = np.full(len(self.df_records), np.nan)
-        if self.compute_uncertainty:
-            dlogbeta_std_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_lower_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_upper_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_median_results = np.full(len(self.df_records), np.nan)
+        dlogbeta_results = np.full(nrecords, np.nan)
 
+        # Main loop over events
+        for i in trange(nevents, desc="Computing dlogbeta"):
 
-        for i in trange(nevents, desc="Computing corrected logbeta"):
-
-            # Choose ith event ID and metadata
+            # Select ith eid and its metadata
             eid = eids[i]
             target = target_data[eid]
+
+            ############## SEARCH FOR CALIBRATION EVENTS ###############
+
+            # Mask for the depth filter (only select calib. events within 
+            # calib_zdist_max of target event depth)
+            depth_mask = (calib_edep >= (target['edep'] - self.calib_zdist_max)) & \
+                         (calib_edep <= (target['edep'] + self.calib_zdist_max))
+
+            # Mask to select only calib_cid that are in target['cids']
+            combined_mask = depth_mask & np.isin(calib_cid, target['cids'])
             
-            # Use pre-grouped data (much faster than boolean indexing)
-            md_t = eid_groups.get_group(eid)
-            
-            # Vectorized depth filter (no array allocation)
-            depth_mask = (calib_edep >= target['edep'] - self.calib_zdist_max) & \
-                         (calib_edep <= target['edep'] + self.calib_zdist_max)
-            
-            # Combined filter with channel match
-            channel_mask = np.isin(calib_cid, target['cids'])
-            combined_mask = depth_mask & channel_mask
-            
-            # Add time filter if enabled
+            # Apply time filter if enabled
             if self.calib_time_filter and self.calib_time_method == 'interval':
                 # Convert time difference to days
-                time_delta_ns = np.abs(calib_etime - target['etime'])
-                time_delta_days = (time_delta_ns / 86400.0) / 1E9
-                
-                time_mask = time_delta_days <= self.calib_time_ndays
-                combined_mask = combined_mask & time_mask
+                time_delta_days = np.abs(calib_etime - target['etime']) \
+                    / 86400.0 / 1E9
+                combined_mask = combined_mask & \
+                    (time_delta_days <= self.calib_time_ndays)
+            elif self.calib_time_filter and self.calib_time_method == 'nearest':
+                raise NotImplementedError("Nearest-N time filter not implemented yet.")
 
+            # Skip event if no records pass filters
             if not combined_mask.any():
                 continue
             
-            # Apply mask once
+            # Apply combined mask
             filtered_elat = calib_elat[combined_mask]
             filtered_elon = calib_elon[combined_mask]
-            filtered_event_name = calib_event_name[combined_mask]
+            filtered_cid = calib_cid[combined_mask]
+            filtered_logbeta = calib_logbeta[combined_mask]
 
             # running_calib_mask = combined_mask.copy()
             
@@ -360,19 +388,13 @@ class BetaEstimator:
             # that pass H/V distance to target, and are recorded by the same
             # channel as the target
             calib_mask_indices = np.where(combined_mask)[0][dist_mask]
-            c_cid = calib_cid[calib_mask_indices]
-            c_logbeta = calib_logbeta[calib_mask_indices]
-            
-            # This is unnecessary since all c_cid_filtered are in target['cids']
-            # # Match channels - simplified since we already have the data
-            # mask_c = np.isin(c_cid_filtered, target['cids'])
-            # c_cid = c_cid_filtered[mask_c]
-            # c_logbeta = c_logbeta_filtered[mask_c]
+            # c_cid = calib_cid[calib_mask_indices]
+            # c_logbeta = calib_logbeta[calib_mask_indices]
 
-            # assert len(mask_c) == sum(mask_c), 'uh oh'
+            c_cid = filtered_cid[dist_mask]
+            c_logbeta = filtered_logbeta[dist_mask]
 
-            # End of depth, channel, and distance filtering. Now, check
-            # which records in target['cids'] are in c_cid
+            ############## MATCH CALIB. & TARGET RECORDS ###############
 
             # Toss any record that doesn't have a calibration record at the
             # same channel
@@ -405,299 +427,119 @@ class BetaEstimator:
             # Split into channel groups
             channel_groups = [sorted_diffs[split_indices[i]:split_indices[i+1]] for i in range(len(split_indices)-1)]
 
-            # Compute median for each channel group
-            channel_medians = np.array([np.median(el) for el in channel_groups], dtype=float)
-            channel_counts  = np.array([len(el) for el in channel_groups], dtype=int)
+            #################### COMPUTE DLOGBETA ######################
 
-            final_mask = channel_counts >= self.calib_n_records_min
+            # Compute the station-specific dlogbeta (dlogbeta_j)
+            dlogbeta_j = np.array([np.median(el) for el in channel_groups], dtype=float)
+            
+            # Store the number of calibration events used in computing 
+            # a single station's dlogbeta_j
+            ncalib_j  = np.array([len(el) for el in channel_groups], dtype=int)
+
+            final_mask = ncalib_j >= self.calib_n_records_min
 
             if final_mask.sum() < 3:
                 continue
+            
+            kept_groups = [channel_groups[i] for i in range(len(channel_groups)) if final_mask[i]]
 
-            channel_medians = channel_medians[final_mask]
-            channel_counts = channel_counts[final_mask]
-
-            # print(channel_groups)
-            # print(channel_medians)
-            # print(channel_counts)
-
-            # plt.figure()
-            # plt.scatter(channel_medians, channel_counts, s=1, c='k')
-            # plt.show()
-            # if i > 20: raise ValueError()
+            dlogbeta_j = dlogbeta_j[final_mask]
+            ncalib_j = ncalib_j[final_mask]
 
             # Final median of medians
-            median_diff = np.median(channel_medians)
+            dlogbeta = np.median(dlogbeta_j)
 
             # Assign to pre-allocated array
-            dlogbeta_results[target['indices']] = median_diff
+            dlogbeta_results[target['indices']] = dlogbeta
 
 
             if self.compute_uncertainty:
-                # bootstrap_estimates = np.zeros(self.n_bootstrap)
-                n_samples = len(channel_medians)
-                resample_indices = np.random.choice(
-                    n_samples, size=(self.n_bootstrap, n_samples), replace=True)
-                bootstrap_estimates = np.median(channel_medians[resample_indices], axis=1)
+                c_event_name[i] = target['event_name']
 
+                c_slat = calib_slat[calib_mask_indices]
+                c_slon = calib_slon[calib_mask_indices]
 
-                dlogbeta_std_results[target['indices']] = np.std(bootstrap_estimates)
+                sorted_c_slat = c_slat[sorted_order]
+                sorted_c_slon = c_slon[sorted_order]
+
+                # Select representative station locations for each channel group
+                c_slats = [sorted_c_slat[split_indices[i]] for i in range(len(split_indices)-1)]
+                c_slons = [sorted_c_slon[split_indices[i]] for i in range(len(split_indices)-1)]
+
+                c_slons = np.array(c_slons)[final_mask]
+                c_slats = np.array(c_slats)[final_mask]
+
+                # get bearings from target event to stations
+                bearings = _get_bearing(
+                    np.full(len(c_slats), target['elat']),
+                    np.full(len(c_slons), target['elon']),
+                    c_slats,
+                    c_slons
+                )
+
+                c_dists = _haversine_km(
+                    np.full(len(c_slats), target['elat']),
+                    np.full(len(c_slons), target['elon']),
+                    c_slats,
+                    c_slons
+                )
+                # Store c_ variables
+                c_dlogbeta_j_list[i] = list(dlogbeta_j)
+                c_bearing_list[i] = list(bearings)
+                c_deldist_list[i] = list(c_dists)
+                c_ncalib_list[i] = list(ncalib_j)
+                c_slat_list[i] = list(c_slats)
+                c_slon_list[i] = list(c_slons)
+                c_dlogbeta_j_res_list[i] = list(np.concatenate([
+                    group - np.median(group) for group in kept_groups
+                ]))
+
+                samples = c_dlogbeta_j_res_list[i] + dlogbeta
+
+                # Maybe could do bootstrap resampling if nsamples too few
+                dlogbeta_std_results[target['indices']] = np.std(samples)
                 dlogbeta_lower_results[target['indices']] = np.percentile(
-                    bootstrap_estimates, lower_percentile)
+                    samples, lower_percentile)
                 dlogbeta_upper_results[target['indices']] = np.percentile(
-                    bootstrap_estimates, upper_percentile)
-                dlogbeta_median_results[target['indices']] = np.median(bootstrap_estimates)
-
-            # DEBUGGING
+                    samples, upper_percentile)
+                dlogbeta_median_results[target['indices']] = np.median(samples)
 
 
-        
+                # leave this here for now, since it works
+            #     # bootstrap_estimates = np.zeros(self.n_bootstrap)
+            #     n_samples = len(dlogbeta_j)
+            #     resample_indices = np.random.choice(
+            #         n_samples, size=(self.n_bootstrap, n_samples), replace=True)
+            #     bootstrap_estimates = np.median(dlogbeta_j[resample_indices], axis=1)
 
-        # Assign results back to DataFrame once at the end
+
+
+        # Assign results back to DataFrame
         self.df_records['dlogbeta'] = dlogbeta_results
+
+        # Store values related to uncertainty if required
         if self.compute_uncertainty:
+            self.df_dlogbeta = pd.DataFrame({
+                'event_name': c_event_name,
+                'dlogbeta_j': c_dlogbeta_j_list,
+                'dlogbeta_j_residual': c_dlogbeta_j_res_list,
+                'bearing': c_bearing_list,
+                'deldist': c_deldist_list,
+                'ncalib_j': c_ncalib_list,
+                'slat': c_slat_list,
+                'slon': c_slon_list,
+                })
+
             self.df_records['dlogbeta_std'] = dlogbeta_std_results
             self.df_records['dlogbeta_lower'] = dlogbeta_lower_results
             self.df_records['dlogbeta_upper'] = dlogbeta_upper_results
             self.df_records['dlogbeta_median'] = dlogbeta_median_results
 
-        # drop rows with NaN dlogbeta
+        # Drop rows with NaN dlogbeta
         self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
 
 
-    def compute_dlogbeta_testing(self):
-        """Correct path and station effects simultaneously (dlogbeta)
 
-        Last Modified:
-            2025-11-24
-        """
-
-        eids = np.unique(self.df_records['_eid'].values)
-        nevents = len(eids)
-
-        # Store NaNs, since we are looping and some might not be computed
-        # self.df_records['dlogbeta'] = np.nan # unnecessary?
-
-        if self.compute_uncertainty:
-            # self.df_records['dlogbeta_std'] = np.nan    # also unnecessary
-            # self.df_records['dlogbeta_lower'] = np.nan  # also unnecessary
-            # self.df_records['dlogbeta_upper'] = np.nan  # also unnecessary
-            # self.df_records['dlogbeta_median'] = np.nan # also unnecessary
-
-            # set confidence intervals for uncertainty
-            alpha = 1 - self.confidence_level
-            lower_percentile = 100 * (alpha / 2)
-            upper_percentile = 100 * (1 - alpha / 2)
-
-        # Pre-compute outside the loop
-        eid_groups = self.df_records.groupby('_eid')
-
-        # Vectorize depth filter on metadata_calib once
-        calib_edep = self.metadata_calib['edep'].values
-        calib_elat = self.metadata_calib['elat'].values
-        calib_elon = self.metadata_calib['elon'].values
-        calib_cid = self.metadata_calib['_cid'].values
-        calib_logbeta = self.metadata_calib['logbeta'].values
-
-        calib_event_name = self.metadata_calib['event_name'].values
-
-        # Pre-extract time data if time filtering is enabled
-        if self.calib_time_filter:
-            calib_etime = self.metadata_calib['etime'].values
-
-        # Pre-extract target event data as dict for faster access
-        target_data = {}
-
-        if self.calib_time_filter:
-            for eid in eids:
-                md_t = eid_groups.get_group(eid)
-                target_data[eid] = {
-                    'edep': md_t['edep'].iloc[0],
-                    'elat': md_t['elat'].iloc[0],
-                    'elon': md_t['elon'].iloc[0],
-                    'etime': md_t['etime'].iloc[0],
-                    'cids': md_t['_cid'].values,
-                    'logbeta': md_t['logbeta'].values,
-                    'indices': md_t.index.values  # Store original indices
-                }
-        else:
-            for eid in eids:
-                md_t = eid_groups.get_group(eid)
-                target_data[eid] = {
-                    'edep': md_t['edep'].iloc[0],
-                    'elat': md_t['elat'].iloc[0],
-                    'elon': md_t['elon'].iloc[0],
-                    'cids': md_t['_cid'].values,
-                    'logbeta': md_t['logbeta'].values,
-                    'indices': md_t.index.values  # Store original indices
-                }
-
-        # Pre-allocate results arrays for faster assignment
-        dlogbeta_results = np.full(len(self.df_records), np.nan)
-        if self.compute_uncertainty:
-            dlogbeta_std_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_lower_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_upper_results = np.full(len(self.df_records), np.nan)
-            dlogbeta_median_results = np.full(len(self.df_records), np.nan)
-
-
-        for i in trange(nevents, desc="Computing corrected logbeta"):
-
-            # Choose ith event ID and metadata
-            eid = eids[i]
-            target = target_data[eid]
-            
-            # Use pre-grouped data (much faster than boolean indexing)
-            md_t = eid_groups.get_group(eid)
-            
-            # Vectorized depth filter (no array allocation)
-            depth_mask = (calib_edep >= target['edep'] - self.calib_zdist_max) & \
-                         (calib_edep <= target['edep'] + self.calib_zdist_max)
-            
-            # Combined filter with channel match
-            channel_mask = np.isin(calib_cid, target['cids'])
-            combined_mask = depth_mask & channel_mask
-            
-            # Add time filter if enabled
-            if self.calib_time_filter and self.calib_time_method == 'interval':
-                # Convert time difference to days
-                time_delta_ns = np.abs(calib_etime - target['etime'])
-                time_delta_days = (time_delta_ns / 86400.0) / 1E9
-                
-                time_mask = time_delta_days <= self.calib_time_ndays
-                combined_mask = combined_mask & time_mask
-
-            if not combined_mask.any():
-                continue
-            
-            # Apply mask once
-            filtered_elat = calib_elat[combined_mask]
-            filtered_elon = calib_elon[combined_mask]
-            filtered_event_name = calib_event_name[combined_mask]
-
-            # running_calib_mask = combined_mask.copy()
-            
-            # Compute distances only for filtered events
-            dists = _haversine_km(
-                np.full(len(filtered_elat), target['elat']),
-                np.full(len(filtered_elon), target['elon']),
-                filtered_elat,
-                filtered_elon
-            )
-            
-            # Distance filter
-            dist_mask = dists <= self.calib_hdist_max
-            
-            if dist_mask.sum() < self.calib_n_records_min:
-                continue
-            
-            # These mask indices are indices of self.metadata_calib
-            # that pass H/V distance to target, and are recorded by the same
-            # channel as the target
-            calib_mask_indices = np.where(combined_mask)[0][dist_mask]
-            c_cid = calib_cid[calib_mask_indices]
-            c_logbeta = calib_logbeta[calib_mask_indices]
-            
-            # This is unnecessary since all c_cid_filtered are in target['cids']
-            # # Match channels - simplified since we already have the data
-            # mask_c = np.isin(c_cid_filtered, target['cids'])
-            # c_cid = c_cid_filtered[mask_c]
-            # c_logbeta = c_logbeta_filtered[mask_c]
-
-            # assert len(mask_c) == sum(mask_c), 'uh oh'
-
-            # End of depth, channel, and distance filtering. Now, check
-            # which records in target['cids'] are in c_cid
-
-            # Toss any record that doesn't have a calibration record at the
-            # same channel
-            mask_t = np.isin(target['cids'], c_cid)
-            t_cid = target['cids'][mask_t]
-            t_logbeta = target['logbeta'][mask_t]
-            
-            # Sort target data by channel ID for efficient matching
-            sorter = np.argsort(t_cid)
-            t_cid_sorted = t_cid[sorter]
-            t_logbeta_sorted = t_logbeta[sorter]
-
-            # Find matching positions for calibration channels in sorted target data
-            v = np.searchsorted(t_cid_sorted, c_cid)
-            
-            # Compute all pairwise differences
-            differences = t_logbeta_sorted[v] - c_logbeta
-
-            # Group differences by channel (c_cid) and compute median for each
-            unique_channels, inverse_indices = np.unique(c_cid, return_inverse=True)
-
-            # Use reduceat for efficient grouped operations
-            sorted_order = np.argsort(inverse_indices)
-            sorted_diffs = differences[sorted_order]
-            sorted_inverse = inverse_indices[sorted_order]
-
-            # Find split points where channel changes
-            split_indices = np.r_[0, np.where(np.diff(sorted_inverse) != 0)[0] + 1, len(sorted_inverse)]
-
-            # Split into channel groups
-            channel_groups = [sorted_diffs[split_indices[i]:split_indices[i+1]] for i in range(len(split_indices)-1)]
-
-            # Compute median for each channel group
-            channel_medians = np.array([np.median(el) for el in channel_groups], dtype=float)
-            channel_counts  = np.array([len(el) for el in channel_groups], dtype=int)
-
-            final_mask = channel_counts >= self.calib_n_records_min
-
-            if final_mask.sum() < 3:
-                continue
-
-            channel_medians = channel_medians[final_mask]
-            channel_counts = channel_counts[final_mask]
-
-            # print(channel_groups)
-            # print(channel_medians)
-            # print(channel_counts)
-
-            # plt.figure()
-            # plt.scatter(channel_medians, channel_counts, s=1, c='k')
-            # plt.show()
-            # if i > 20: raise ValueError()
-
-            # Final median of medians
-            median_diff = np.median(channel_medians)
-
-            # Assign to pre-allocated array
-            dlogbeta_results[target['indices']] = median_diff
-
-
-            if self.compute_uncertainty:
-                # bootstrap_estimates = np.zeros(self.n_bootstrap)
-                n_samples = len(channel_medians)
-                resample_indices = np.random.choice(
-                    n_samples, size=(self.n_bootstrap, n_samples), replace=True)
-                bootstrap_estimates = np.median(channel_medians[resample_indices], axis=1)
-
-
-                dlogbeta_std_results[target['indices']] = np.std(bootstrap_estimates)
-                dlogbeta_lower_results[target['indices']] = np.percentile(
-                    bootstrap_estimates, lower_percentile)
-                dlogbeta_upper_results[target['indices']] = np.percentile(
-                    bootstrap_estimates, upper_percentile)
-                dlogbeta_median_results[target['indices']] = np.median(bootstrap_estimates)
-
-            # DEBUGGING
-
-
-        
-
-        # Assign results back to DataFrame once at the end
-        self.df_records['dlogbeta'] = dlogbeta_results
-        if self.compute_uncertainty:
-            self.df_records['dlogbeta_std'] = dlogbeta_std_results
-            self.df_records['dlogbeta_lower'] = dlogbeta_lower_results
-            self.df_records['dlogbeta_upper'] = dlogbeta_upper_results
-            self.df_records['dlogbeta_median'] = dlogbeta_median_results
-
-        # drop rows with NaN dlogbeta
-        self.df_records = self.df_records.dropna(subset=['dlogbeta']).reset_index(drop=True)
 
 
     def apply_magnitude_correction(self, corr_type='smoothedspline'):
@@ -788,10 +630,12 @@ class BetaEstimator:
 
     def group_events(self):
         self.fprint("group_events()")
+        t0 = time.time()
         # group self.df_records by event dependent fields
         self.compute_column_dependencies()
         # return self
         self.df_events = self.df_records.groupby(self.ev_dep, as_index=False)[self.ch_dep+self.pair_dep].agg(list)
+        self.tprint(f"    |---> {time.time()-t0:.4f} seconds")
 
     def group_channels(self):
         self.fprint("group_channels()")
@@ -801,13 +645,17 @@ class BetaEstimator:
 
     def explode_events(self):
         self.fprint('explode_events()')
+        t0 = time.time()
         self.compute_column_dependencies()
         self.df_records = self.df_events.explode(self.ch_dep+self.pair_dep)
+        self.tprint(f"    |---> {time.time()-t0:.4f} seconds")
 
     def explode_channels(self):
+        t0 = time.time()
         self.fprint('explode_channels()')
         self.compute_column_dependencies()
         self.df_records = self.df_channels.explode(self.ev_dep+self.pair_dep)
+        self.tprint(f"    |---> {time.time()-t0:.4f} seconds")
 
     def compute_column_dependencies(self):
         # Columns in self.df_records are 'dependent' in one of three ways:
@@ -981,6 +829,10 @@ class BetaEstimator:
         
     def fprint(self, S):
         if not self.quiet:
+            print(S)
+    
+    def tprint(self, S):
+        if self.print_time:
             print(S)
 
     def print_frequency_information(self):
@@ -1287,3 +1139,13 @@ def _haversine_km(lon1, lat1, lon2, lat2):
     c = 2 * np.arcsin(np.sqrt(a)) 
     r = 6371.0 # Radius of earth in kilometers. Use 3956 for miles. Determines return value units.
     return c * r
+
+def _get_bearing(lat1, lon1, lat2, lon2):
+    """
+    Calculate the bearing between two points, from point 1 to point 2.
+    """
+    y = np.sin(np.radians(lon2 - lon1)) * np.cos(np.radians(lat2))
+    x = np.cos(np.radians(lat1)) * np.sin(np.radians(lat2)) - np.sin(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.cos(np.radians(lon2 - lon1))
+    bearing = np.degrees(np.arctan2(y, x))
+    bearing = (bearing + 360) % 360
+    return bearing
