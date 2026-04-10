@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-beta_compute_optimized.py
+beta_compute.py
 
 Optimized version of beta_compute.py targeting:
   1) Memory reduction (~3-5x for 10M+ records)
