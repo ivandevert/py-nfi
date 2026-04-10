@@ -476,37 +476,44 @@ class BetaEstimator:
     def store_edatetimes(self):
 
         pass
+
     def save_fwf(self):
         t0 = time.time()
         self.fprint(f"Saving fixed-width format results to {self.save_dir}/logbeta.txt")
 
-        cols = ['event_name', 'edatetime', 'etype', 'emag', 'emagtype', 'elon', 'elat', 'edep', 'nrec', 'dlogbeta', 'dlogbeta_std', 'dlogbeta_lower', 'dlogbeta_upper', 'nfi']
-        fmts = ['%12s', '%27s', '%2s', '%5.2f', '%2s', '%15.11f', '%15.11f', '%7.3f', '%5i', '%15.11f', '%12.7e', '%12.7e', '%12.7e', '%15.11f']
-        # fmt = "%12s %27s %<2s %5.2f %<2s %15.11f %15.11f %7.3f %5i %15.11f %13.7e %13.7e %13.7e %16.11f"
+        col_fmts = {
+            'event_name':    '%12s',
+            'edatetime':     '%27s',
+            'etype':         '%2s',
+            'emag':          '%5.2f',
+            'emagtype':      '%2s',
+            'elon':          '%10.5f',
+            'elat':          '%9.5f',
+            'edep':          '%7.3f',
+            'nrec':          '%5i',
+            'dlogbeta':      '%9.5f',
+            'dlogbeta_std':  '%8.3e',
+            'dlogbeta_lower':'%8.3e',
+            'dlogbeta_upper':'%8.3e',
+            'nfi':           '%9.5f',
+        }
 
-        use_cols = []
-        use_fmts = []
-        for i in range(len(cols)):
-            col = cols[i]
-            
-            if col in self.df_events.columns:
-                use_cols.append(col)
-                use_fmts.append(fmts[i])
+        # Filter to columns that exist in the output dataframe
+        available = {c: f for c, f in col_fmts.items() if c in self.df_events.columns}
+        cols = list(available.keys())
+        fmts = list(available.values())
 
-        df_out = self.df_events.copy()
-        if "edatetime" in use_cols:
-            df_out = df_out.sort_values(by=["edatetime"]).reset_index(drop=True)
-            print("Output sorted by edatetime")
-        else:
-            df_out = df_out.sort_values(by=["event_name"]).reset_index(drop=True)
-            print("Output sorted by event_name")
+        # Sort by time if available, otherwise by name
+        sort_col = 'edatetime' if 'edatetime' in cols else 'event_name'
+        df_out = self.df_events[cols].sort_values(by=sort_col).reset_index(drop=True)
+        self.fprint(f"Output sorted by {sort_col}")
 
         np.savetxt(
-            f"{self.save_dir}/logbeta.txt", 
-            df_out[use_cols].values, 
-            fmt=" ".join(use_fmts), 
-            header=' '.join(use_cols),
-            comments=''
+            f"{self.save_dir}/logbeta.txt",
+            df_out.values,
+            fmt=" ".join(fmts),
+            header=' '.join(cols),
+            comments='',
         )
         self.tprint(f"    |---> ({time.time()-t0:.2f}s)")
 
