@@ -5,3 +5,5 @@ example_data/.DS_Store
 .DS_Store
 testing/tmp/data.logbeta
 __pycache__/beta_compute.cpython-312.pyc
+/archive
+/testing
