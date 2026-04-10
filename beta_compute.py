@@ -22,7 +22,7 @@ Key changes from original:
   - Now, explosion events are dropped before calibration event selection
 
 Last Modified:
-    2026-03-24
+    2026-04-10
 
 Future improvements:
   - Use nearest neighbors for calibration events
@@ -557,11 +557,6 @@ class BetaEstimator:
         
         # self.df_records.drop(columns=['edatetime'], inplace=True)
 
-    def convert_posix_ns_to_datetime(self):
-        self.df_records['edatetime'] = pd.to_datetime(
-            self.df_records['etime'], unit='ns')
-        # self.df_records.drop(columns=['etime'], inplace=True)
-
     def compute_dlogbeta(self):
         """Correct path and station effects simultaneously (dlogbeta).
         
@@ -904,12 +899,6 @@ class BetaEstimator:
         self.explode_events()
         self.group_channels()
 
-    def plot_corrections(self):
-        plt.plot(self.correction_mags, self.correction_function)
-        plt.xlabel('Magnitude')
-        plt.ylabel('dlogbeta correction')
-        plt.show()
-
     def group_events(self):
         self.fprint("group_events()")
         t0 = time.time()
@@ -1134,14 +1123,6 @@ class BetaEstimator:
             print(f"Records:  {nrec:,}")
         else:
             print(f"Records:  {nrec:,} of {self.nrecords_initial:,} inital ({nrec/self.nrecords_initial*100:.2f}%)")
-
-    @staticmethod
-    def compute_logbeta_static(spectra, low_f_ind, high_f_ind):
-        low_band = np.median(np.log10(spectra[:, low_f_ind[0]:low_f_ind[1]+1]), axis=1)
-        high_band = np.median(np.log10(spectra[:, high_f_ind[0]:high_f_ind[1]+1]), axis=1)
-        logbeta = high_band - low_band
-        return logbeta
-
 
 
 def _get_inds_of_values_in_array(x, values):
