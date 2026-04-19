@@ -22,7 +22,7 @@ Key changes from original:
   - Now, explosion events are dropped before calibration event selection
 
 Last Modified:
-    2026-04-10
+    2026-04-18
 
 Future improvements:
   - Use nearest neighbors for calibration events
@@ -40,6 +40,7 @@ from multiprocessing import shared_memory
 from functools import partial
 
 import matplotlib.pyplot as plt
+from obspy import UTCDateTime as UTC
 
 
 # ============================================================
@@ -508,6 +509,8 @@ class BetaEstimator:
         df_out = self.df_events[cols].sort_values(by=sort_col).reset_index(drop=True)
         self.fprint(f"Output sorted by {sort_col}")
 
+        df_out['edatetime'] = np.datetime_as_string(df_out['edatetime'].values, unit='ms')
+
         np.savetxt(
             f"{self.save_dir}/logbeta.txt",
             df_out.values,
@@ -970,6 +973,17 @@ class BetaEstimator:
 
 
     def validate_input(self):
+        def _to_datetime64(x):
+            if isinstance(x, np.datetime64):
+                return x
+            if isinstance(x, UTC):
+                return np.datetime64(int(x.ns), 'ns')
+            if isinstance(x, str):
+                return np.datetime64(pd.Timestamp(x).to_datetime64())
+            if isinstance(x, pd.Timestamp):
+                return x.to_datetime64()
+            raise TypeError(f"Unhandled edatetime type: {type(x)}")
+
         t0 = time.time()
         self.fprint("validate_input()")
         columns = self.df_records.columns
@@ -1019,6 +1033,10 @@ class BetaEstimator:
         for col in required_columns:
             if col not in self.df_records.columns:
                 raise ValueError(f"Missing required column: {col}")
+        
+        # Make sure 'edatetime' is proper format
+        if 'edatetime' in columns:
+            self.df_records['edatetime'] = self.df_records['edatetime'].apply(_to_datetime64)
 
         # Convert edatetime to posix ns (handles strings, UTCDateTime, etc.)
         if 'edatetime' in columns:
