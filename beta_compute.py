@@ -20,9 +20,11 @@ Key changes from original:
   - save_fwf() now sorts by edatetime when available, otherwise event_name
   - added 'nearest-neighbor' option for calib_search_method
   - Now, explosion events are dropped before calibration event selection
+  - Added 'source-separate' option for mag_corr_method: separate magnitude corrections for each source
+  - Changed magnitude correction to extend to lowest magnitude of catalog, instead of dM/2 + Mmin
 
 Last Modified:
-    2026-04-18
+    2026-04-21
 
 Future improvements:
   - Use nearest neighbors for calibration events
@@ -871,40 +873,76 @@ class BetaEstimator:
 
 
     def apply_magnitude_correction(self, corr_type='smoothedspline'):
-        self.group_events()
-        mag_corr_dM = self.mag_corr_dM
-        if corr_type == 'smoothedspline':
+        def _smoothed_spline_correction(emag, dlogbeta, mag_edges):
             from scipy.signal import savgol_filter
             from scipy.stats import binned_statistic
 
-            M_range = np.round((
-                np.floor(np.min(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM, 
-                np.ceil(np.max(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM
-                ), 4)
-            
-            edges = np.arange(M_range[0], M_range[1]+1*mag_corr_dM, mag_corr_dM)
-            midpoints = (edges[:-1] + edges[1:])/2
+            midpoints = (mag_edges[:-1] + mag_edges[1:])/2
+            bin_inds = np.digitize(emag, mag_edges) - 1
 
-            self.df_events = self.df_events[self.df_events['emag']>=midpoints[0]].reset_index(drop=True)
+            median_dlbeta = binned_statistic(emag, dlogbeta, statistic='median', bins=mag_edges)[0]
 
-            emag = self.df_events['emag'].values
-            dlogbeta = self.df_events['dlogbeta'].values
-
-            bin_inds = np.digitize(emag, edges) - 1
-
-            median_dlbeta = binned_statistic(emag, dlogbeta, statistic='median', bins=edges)[0]
-
-            filter_window_len = int(np.floor(len(median_dlbeta)/4))
-            polyorder = 3
-            if polyorder >= filter_window_len:
-                polyorder = filter_window_len-1
             naninds = np.isnan(median_dlbeta)
             realmids = midpoints[~naninds]
-            median_dlbeta_smooth = savgol_filter(median_dlbeta[~naninds], filter_window_len, polyorder)
-            corrections = np.interp(self.df_events['emag'].values, realmids, median_dlbeta_smooth)
-            self.correction_mags = realmids
-            self.correction_function = median_dlbeta_smooth
-            self.df_events['nfi'] = self.df_events['dlogbeta'].values - corrections
+            median_dlbeta_valid = median_dlbeta[~naninds]
+
+            filter_window_len = int(np.floor(len(median_dlbeta_valid)/4))
+            if filter_window_len % 2 == 0:
+                filter_window_len -= 1
+            filter_window_len = max(filter_window_len, 3)
+
+            polyorder = min(3, filter_window_len - 1)
+
+            median_dlbeta_smooth = savgol_filter(median_dlbeta_valid, filter_window_len, polyorder)
+
+            corrections = np.interp(emag, realmids, median_dlbeta_smooth)
+            correction_mags = realmids
+            correction_function = median_dlbeta_smooth
+
+            nfi = dlogbeta - corrections
+
+            return nfi, correction_mags, correction_function
+
+        self.group_events()
+        mag_corr_dM = self.mag_corr_dM
+
+        M_range = np.round((
+            np.floor(np.min(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM - mag_corr_dM/2, 
+            np.ceil(np.max(self.df_events['emag'].values) / mag_corr_dM) * mag_corr_dM + mag_corr_dM/2
+            ), 4)
+        
+        mag_edges = np.arange(M_range[0], M_range[1]+1*mag_corr_dM, mag_corr_dM)
+
+        # midpoint_0 = (mag_edges[0] + mag_edges[1])/2
+
+        # self.df_events = self.df_events[self.df_events['emag']>=midpoint_0].reset_index(drop=True)
+        
+
+        if corr_type == 'smoothedspline':
+            nfi, correction_mags, correction_function = _smoothed_spline_correction(
+                self.df_events['emag'].values, 
+                self.df_events['dlogbeta'].values,
+                mag_edges
+            )
+            self.df_events['nfi'] = nfi
+            self.correction_mags = correction_mags
+            self.correction_function = correction_function
+        elif corr_type == 'source-separate':
+            source = self.df_events['event_name'].str[0]
+            self.correction_mags = {}
+            self.correction_function = {}
+            self.df_events['nfi'] = np.nan
+            for s in np.unique(source):
+                df_source = self.df_events[source==s]
+                nfi, correction_mags, correction_function = _smoothed_spline_correction(
+                    df_source['emag'].values, 
+                    df_source['dlogbeta'].values,
+                    mag_edges
+                )
+                self.df_events.loc[source==s, 'nfi'] = nfi
+                self.correction_mags[s] = correction_mags
+                self.correction_function[s] = correction_function
+
 
         self.explode_events()
         self.group_channels()
