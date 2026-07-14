@@ -11,3 +11,4 @@ __pycache__/beta_compute.cpython-312.pyc
 src/nfi/_version.py
 /dist
 /__pycache__
+/ridgecrest/__pycache__
