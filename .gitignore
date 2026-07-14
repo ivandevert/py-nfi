@@ -8,3 +8,6 @@ __pycache__/beta_compute.cpython-312.pyc
 /archive
 /testing
 /paper
+src/nfi/_version.py
+/dist
+/__pycache__
