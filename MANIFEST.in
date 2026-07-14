@@ -1,0 +1,5 @@
+prune notebooks
+prune paper
+prune figures
+graft src/nfi
+include LICENSE README.md
