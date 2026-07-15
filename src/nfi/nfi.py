@@ -104,6 +104,10 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
         lower_percentile = 100 * (alpha / 2)
         upper_percentile = 100 * (1 - alpha / 2)
 
+    # update:
+    n_cid = int(c_cid.max()) + 1 if len(c_cid) else 1
+    cid_lut = np.zeros(n_cid, dtype=bool)
+
     # Results for this chunk
     results = []
 
@@ -125,9 +129,16 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
                      (c_edep <= (target_edep + calib_zdist_max))
 
         # Channel overlap filter
-        target_cid_set = set(target_cids)
-        cid_mask = np.array([cid in target_cid_set for cid in c_cid[depth_mask]], dtype=bool)
-        
+        # target_cid_set = set(target_cids)
+        # cid_mask = np.array([cid in target_cid_set for cid in c_cid[depth_mask]], dtype=bool)
+
+        # update:
+        valid_targets = target_cids[target_cids < n_cid]
+        cid_lut[valid_targets] = True
+        cid_mask = cid_lut[c_cid[depth_mask]]
+        cid_lut[valid_targets] = False   # reset only touched entries
+
+
         # Get indices into original calib arrays that pass depth
         depth_indices = np.where(depth_mask)[0]
         combined_indices = depth_indices[cid_mask]
@@ -146,10 +157,10 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
 
         # Distance filter
         dists = _haversine_km(
-            np.full(len(combined_indices), target_elat),
-            np.full(len(combined_indices), target_elon),
-            c_elat[combined_indices],
-            c_elon[combined_indices]
+            lon1=np.full(len(combined_indices), target_elon),
+            lat1=np.full(len(combined_indices), target_elat),
+            lon2=c_elon[combined_indices],
+            lat2=c_elat[combined_indices],
         )
         dist_mask = dists <= calib_hdist_max
 
@@ -170,9 +181,10 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
             ce_edep = cu_edep[rec_event_idx]
 
             hdists_ev = _haversine_km(
-                np.full(len(combined_indices), target_elat),
-                np.full(len(combined_indices), target_elon),
-                ce_elat, ce_elon
+                lon1=np.full(len(combined_indices), target_elon),
+                lat1=np.full(len(combined_indices), target_elat),
+                lon2=ce_elon,
+                lat2=ce_elat, 
             )
             vdists_ev = np.abs(ce_edep - target_edep) * calib_depth_scale
             rec_scaled_dists = np.sqrt(hdists_ev**2 + vdists_ev**2)
@@ -275,9 +287,10 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
                     rep_slats, rep_slons
                 )
                 cdists = _haversine_km(
-                    np.full(len(rep_slats), target_elat),
-                    np.full(len(rep_slons), target_elon),
-                    rep_slats, rep_slons
+                    lon1=np.full(len(rep_slons), target_elon),
+                    lat1=np.full(len(rep_slats), target_elat),
+                    lon2=rep_slons,
+                    lat2=rep_slats, 
                 )
 
             
@@ -459,7 +472,8 @@ class nFIEstimator:
             t0 = time.time()
             self.fprint(f"Loading data & parameters from {self.save_dir}")
             loaded_instance = self.load_data(self.save_dir)
-            self.load_parameters()
+            self.__dict__.update(loaded_instance.__dict__)   # update self in place
+            # self.load_parameters()
             self.fprint(f"Done. ({time.time()-t0:.2f}s)")
             return loaded_instance
 
@@ -505,7 +519,8 @@ class nFIEstimator:
         df_out = self.df_events[cols].sort_values(by=sort_col).reset_index(drop=True)
         self.fprint(f"Output sorted by {sort_col}")
 
-        df_out['edatetime'] = np.datetime_as_string(df_out['edatetime'].values, unit='ms')
+        if 'edatetime' in cols:
+            df_out['edatetime'] = np.datetime_as_string(df_out['edatetime'].values, unit='ms')
 
         np.savetxt(
             f"{self.save_dir}/logbeta.txt",
@@ -662,6 +677,8 @@ class nFIEstimator:
         # ---------------------------------------------------------
         # Create shared memory blocks
         # ---------------------------------------------------------
+
+        # possible issue with setting name
         def _create_shm(name, arr):
             shm = shared_memory.SharedMemory(create=True, size=arr.nbytes, name=name)
             shared_arr = np.ndarray(arr.shape, dtype=arr.dtype, buffer=shm.buf)
@@ -974,7 +991,8 @@ class nFIEstimator:
             elif col in pair_dep_columns:
                 self.pair_dep.append(col)
             else:
-                raise Warning("Column {} not recognized".format(col))
+                warnings.warn(f"Column '{col}' not recognized; dropping it.")
+                self.df_records = self.df_records.drop(columns=[col])
 
 
     def validate_input(self):
@@ -1013,6 +1031,14 @@ class nFIEstimator:
         missing = [c for c in required_columns if c not in self.df_records.columns]
         if missing:
             raise ValueError(f"Missing required columns: {missing}")
+
+        if self.calib_time_filter and 'edatetime' not in self.df_records.columns:
+            raise ValueError("calib_time_filter=True requires an 'edatetime' column in df_records.")
+
+        if self.calib_time_filter and self.calib_time_method != 'interval':
+            raise NotImplementedError(
+                f"calib_time_method='{self.calib_time_method}' not implemented; only 'interval' is supported."
+            )
 
         # edatetime is either strings or datetime64[ns]; pd.to_datetime handles both.
         # Store the parsed datetimes and the POSIX-ns int64 view.
@@ -1061,13 +1087,18 @@ class nFIEstimator:
     def compute_logbeta(self):
         t0 = time.time()
         self.fprint("compute_logbeta()")
+        if getattr(self, 'spectra', None) is None:
+            raise RuntimeError(
+                "Spectra were released after the first compute() to save memory; "
+                "re-instantiate nFIEstimator to recompute."
+            )
         low_inds = self.low_window_inds
         high_inds = self.high_window_inds
         
         low_band = np.median(np.log10(self.spectra[:, low_inds[0]:low_inds[1]+1]), axis=1)
         high_band = np.median(np.log10(self.spectra[:, high_inds[0]:high_inds[1]+1]), axis=1)
         self.df_records['logbeta'] = high_band - low_band
-        del self.spectra
+        self.spectra = None  # instead of del
         self.tprint(f"    |---> {time.time()-t0:.4f} seconds")
 
     def compute_frequency_bands(self):
@@ -1117,17 +1148,17 @@ class nFIEstimator:
         if nev==self.nevents_initial:
             print(f"Events:   {nev:,}")
         else:
-            print(f"Events:   {nev:,} of {self.nevents_initial:,} inital ({nev/self.nevents_initial*100:.2f}%)")
+            print(f"Events:   {nev:,} of {self.nevents_initial:,} initial ({nev/self.nevents_initial*100:.2f}%)")
 
         if nst==self.nchannels_initial:
             print(f"Channels: {nst:,}")
         else:
-            print(f"Channels: {nst:,} of {self.nchannels_initial:,} inital ({nst/self.nchannels_initial*100:.2f}%)")
+            print(f"Channels: {nst:,} of {self.nchannels_initial:,} initial ({nst/self.nchannels_initial*100:.2f}%)")
         
         if nrec==self.nrecords_initial:
             print(f"Records:  {nrec:,}")
         else:
-            print(f"Records:  {nrec:,} of {self.nrecords_initial:,} inital ({nrec/self.nrecords_initial*100:.2f}%)")
+            print(f"Records:  {nrec:,} of {self.nrecords_initial:,} initial ({nrec/self.nrecords_initial*100:.2f}%)")
 
 
 def _get_inds_of_values_in_array(x, values):
