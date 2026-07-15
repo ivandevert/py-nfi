@@ -1,5 +1,5 @@
-prune notebooks
-prune paper
-prune figures
+prune archive
+prune ridgecrest
+prune testing
 graft src/nfi
 include LICENSE README.md

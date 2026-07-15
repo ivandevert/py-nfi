@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-beta_compute.py
+nfi.py
 
 Optimized version of beta_compute.py targeting:
   1) Memory reduction (~3-5x for 10M+ records)
@@ -14,7 +14,6 @@ Key changes from original:
   - Uncertainty bookkeeping uses sparse storage (only events that produce results)
   - compute_dlogbeta parallelized with multiprocessing.Pool + shared memory arrays
   - np.isin replaced with pre-built set lookups where beneficial
-  - convert_utc_to_posix_ns uses vectorized pd.to_datetime instead of per-row obspy UTC
   - groupby uses observed=True to avoid Cartesian product explosion with categoricals
   - changed dlogbeta_corr to nfi
   - save_fwf() now sorts by edatetime when available, otherwise event_name
@@ -22,9 +21,7 @@ Key changes from original:
   - Now, explosion events are dropped before calibration event selection
   - Added 'source-separate' option for mag_corr_method: separate magnitude corrections for each source
   - Changed magnitude correction to extend to lowest magnitude of catalog, instead of dM/2 + Mmin
-
-Last Modified:
-    2026-04-21
+  - obspy UTCDateTime removed, so no dependency on obspy
 
 Future improvements:
   - Use nearest neighbors for calibration events
@@ -40,10 +37,7 @@ import inspect
 import multiprocessing as mp
 from multiprocessing import shared_memory
 from functools import partial
-
-import matplotlib.pyplot as plt
-from obspy import UTCDateTime as UTC
-
+import warnings
 
 # ============================================================
 # Module-level worker function (must be picklable for mp.Pool)
@@ -542,33 +536,6 @@ class BetaEstimator:
             params = pkl.load(fs)
         return params
 
-    def convert_utc_to_posix_ns(self):
-        """Convert edatetime column to POSIX nanoseconds (int64).
-        
-        Handles three input types efficiently:
-          1) obspy UTCDateTime objects → use .ns attribute
-          2) datetime strings → vectorized pd.to_datetime (~100x faster than per-row UTC())
-          3) already numeric → pass through
-        """
-        col = self.df_records['edatetime']
-        
-        # Check the first non-null value to determine type
-        first_val = col.iloc[0]
-        
-        if hasattr(first_val, 'ns'):
-            # obspy UTCDateTime objects — use .ns (original behavior)
-            self.df_records['etime'] = col.apply(lambda x: x.ns)
-        elif isinstance(first_val, (int, np.integer)):
-            # Already numeric
-            self.df_records['etime'] = col.values.astype(np.int64)
-        else:
-            # String or datetime-like — use vectorized pandas parsing
-            # pd.to_datetime is ~100x faster than per-row obspy UTC()
-            dt = pd.to_datetime(col)
-            self.df_records['etime'] = dt.astype(np.int64)  # nanoseconds since epoch
-        
-        # self.df_records.drop(columns=['edatetime'], inplace=True)
-
     def compute_dlogbeta(self):
         """Correct path and station effects simultaneously (dlogbeta).
         
@@ -1011,96 +978,71 @@ class BetaEstimator:
 
 
     def validate_input(self):
-        def _to_datetime64(x):
-            if isinstance(x, np.datetime64):
-                return x
-            if isinstance(x, UTC):
-                return np.datetime64(int(x.ns), 'ns')
-            if isinstance(x, str):
-                return np.datetime64(pd.Timestamp(x).to_datetime64())
-            if isinstance(x, pd.Timestamp):
-                return x.to_datetime64()
-            raise TypeError(f"Unhandled edatetime type: {type(x)}")
-
         t0 = time.time()
         self.fprint("validate_input()")
-        columns = self.df_records.columns
-        # Rename columns to standardized names. Conventions:
-        #     1) event-dependent quantities begin with e-
-        #     2) station/channel-dependent quantities begin with s-
-        #     3) event_name and channel_name are unique identifiers for
-        #        events and channels, respectively
+
+        # Standardize column names. Conventions:
+        #   1) event-dependent quantities begin with e-
+        #   2) station/channel-dependent quantities begin with s-
+        #   3) event_name and channel_name are unique identifiers
+        aliases = {
+            'event_name':   ['event_id', 'evid', 'event'],
+            'channel_name': ['station_id', 'sid', 'station', 'stname', 'st_name', 'stid'],
+        }
 
         ### Check column names and verify all required columns are present ###
-        # Check for an event_name column
-        event_name_columns = ['event_id', 'evid', 'event']
-        if 'event_name' not in columns:
-            for col in event_name_columns:
-                if col in columns:
-                    self.df_records.rename(
-                        columns={col: 'event_name'}, inplace=True)
-                    self.fprint("Renamed column {} to event_name".format(col))
+        for canonical, alts in aliases.items():
+            if canonical in self.df_records.columns:
+                continue
+            for alt in alts:
+                if alt in self.df_records.columns:
+                    self.df_records.rename(columns={alt: canonical}, inplace=True)
+                    self.fprint(f"Renamed column {alt} to {canonical}")
                     break
-        if "event_name" not in self.df_records.columns:
-            raise ValueError("No event_name column found. Check input data.")
-        
-        channel_name_columns = ['station_id', 'sid', 'station', 'stname', 
-                                'st_name', 'stid']
-        if 'channel_name' not in columns:
-            for col in channel_name_columns:
-                if col in columns:
-                    self.df_records.rename(
-                        columns={col: 'channel_name'}, inplace=True)
-                    self.fprint("Renamed column {} to channel_name".format(col))
-                    break
-        if "channel_name" not in self.df_records.columns:
-            raise ValueError("No channel_name column found. Check input data.")
-        
-        if 'qmag' in columns:
-            self.df_records.rename(columns={'qmag': 'emag'}, inplace=True)
-        if 'qlat' in columns:
-            self.df_records.rename(columns={'qlat': 'elat'}, inplace=True)
-        if 'qlon' in columns:
-            self.df_records.rename(columns={'qlon': 'elon'}, inplace=True)
-        if 'qdep' in columns:
-            self.df_records.rename(columns={'qdep': 'edep'}, inplace=True)
+
+        # Simple 1:1 renames (rename silently ignores absent keys)
+        self.df_records.rename(
+            columns={'qmag': 'emag', 'qlat': 'elat', 'qlon': 'elon', 'qdep': 'edep'},
+            inplace=True,
+        )
 
         required_columns = [
-            'event_name', 'channel_name', 'emag', 'elat', 'elon', 'edep', 
-            'slat', 'slon', 'selev', 'deldist']
-        for col in required_columns:
-            if col not in self.df_records.columns:
-                raise ValueError(f"Missing required column: {col}")
-        
-        # Make sure 'edatetime' is proper format
-        if 'edatetime' in columns:
-            self.df_records['edatetime'] = self.df_records['edatetime'].apply(_to_datetime64)
+            'event_name', 'channel_name', 'emag', 'elat', 'elon', 'edep',
+            'slat', 'slon', 'selev', 'deldist',
+        ]
+        missing = [c for c in required_columns if c not in self.df_records.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
 
-        # Convert edatetime to posix ns (handles strings, UTCDateTime, etc.)
-        if 'edatetime' in columns:
-            self.convert_utc_to_posix_ns()
+        # edatetime is either strings or datetime64[ns]; pd.to_datetime handles both.
+        # Store the parsed datetimes and the POSIX-ns int64 view.
+        if 'edatetime' in self.df_records.columns:
+            dt = pd.to_datetime(self.df_records['edatetime'])
+            self.df_records['edatetime'] = dt
+            self.df_records['etime'] = dt.to_numpy().astype('int64')
 
+        # Shape checks
         if len(self.df_records) != self.spectra.shape[0]:
             raise ValueError("Metadata and spectra row counts do not match.")
         if len(self.f) != self.spectra.shape[1]:
             raise ValueError(
                 f"Spectra width {self.spectra.shape[1]} does not match "
-                f"f array length {len(self.f)}.")
+                f"f array length {len(self.f)}."
+            )
 
-        if (np.median(self.df_records['deldist']) > 100) or \
-            (np.median(self.df_records['deldist']) < 10):
-            raise Warning(
-                f"Is deldist in km? Median is"
-                f" {np.median(self.df_records['deldist'])}")
-        
-        assert np.sum(np.isnan(self.spectra)) == 0, \
-            "Spectra contains NaNs."
+        median_deldist = np.median(self.df_records['deldist'])
+        if not 10 <= median_deldist <= 100:
+            warnings.warn(f"Is deldist in km? Median is {median_deldist}")
 
-        self.nrecords_initial = len(self.df_records)
-        self.nevents_initial = len(self.df_records['event_name'].unique())
-        self.nchannels_initial = len(self.df_records['channel_name'].unique())
+        if np.isnan(self.spectra).any():
+            raise ValueError("Spectra contains NaNs.")
 
-        if self.save_dir is None: self.save_dir = 'tmp/'
+        self.nrecords_initial  = len(self.df_records)
+        self.nevents_initial   = self.df_records['event_name'].nunique()
+        self.nchannels_initial = self.df_records['channel_name'].nunique()
+
+        if self.save_dir is None:
+            self.save_dir = 'tmp/'
         os.makedirs(self.save_dir, exist_ok=True)
 
         self.tprint(f"    |---> {time.time()-t0:.4f} seconds")
