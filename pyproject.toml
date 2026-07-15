@@ -34,6 +34,7 @@ dev = ["pytest", "build", "twine"]
 Homepage = "https://github.com/ivandevert/py-nfi"
 Repository = "https://github.com/ivandevert/py-nfi"
 Issues = "https://github.com/ivandevert/py-nfi/issues"
+Paper = "https://doi.org/10.1785/0120250171"
 
 [tool.setuptools.packages.find]
 where = ["src"]
