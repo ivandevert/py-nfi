@@ -531,7 +531,7 @@ class nFIEstimator:
         self.tprint(f"    |---> ({time.time()-t0:.2f}s)")
 
     def load_parameters(self):
-        self.fprint(f"Loading parameters from {self.save_dir.strip("/")}/params.logbeta")
+        self.fprint(f"Loading parameters from {self.save_dir.rstrip("/")}/params.logbeta")
         with open(f"{self.save_dir}/params.logbeta", 'rb') as fs:
             params = pkl.load(fs)
         return params
