@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Keep notebooks out of the language stats and diffs, but keep them in the repo
+*.ipynb linguist-documentation

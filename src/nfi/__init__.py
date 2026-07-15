@@ -1,2 +1,4 @@
 from ._version import version as __version__
-from .nfi import BetaEstimator
+from .nfi import nFIEstimator, BetaEstimator
+
+__all__ = ["nFIEstimator", "BetaEstimator"]
