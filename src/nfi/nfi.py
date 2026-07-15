@@ -935,6 +935,7 @@ class nFIEstimator:
         self.fprint("group_events()")
         t0 = time.time()
         self.compute_column_dependencies()
+        self._decategorize(self.ch_dep + self.pair_dep)
         # observed=True: only group by values actually present in the data.
         # This is critical when event_name/channel_name are categorical —
         # observed=False (the pandas default) would try to create the full
@@ -948,6 +949,7 @@ class nFIEstimator:
     def group_channels(self):
         self.fprint("group_channels()")
         self.compute_column_dependencies()
+        self._decategorize(self.ev_dep + self.pair_dep)
         self.df_channels = self.df_records.groupby(
             self.ch_dep, as_index=False, dropna=False, observed=True
         )[self.ev_dep+self.pair_dep].agg(list)
@@ -1160,6 +1162,15 @@ class nFIEstimator:
         else:
             print(f"Records:  {nrec:,} of {self.nrecords_initial:,} initial ({nrec/self.nrecords_initial*100:.2f}%)")
 
+    def _decategorize(self, cols):
+        """List-aggregation of categorical columns fails in recent pandas
+        (the list result is cast back to Categorical, and lists are
+        unhashable). Cast categorical agg columns to object first."""
+        cat_cols = [c for c in cols
+                    if isinstance(self.df_records[c].dtype, pd.CategoricalDtype)]
+        if cat_cols:
+            self.fprint(f"Casting categorical columns to object for list-agg: {cat_cols}")
+            self.df_records[cat_cols] = self.df_records[cat_cols].astype(object)
 
 def _get_inds_of_values_in_array(x, values):
     return np.array([np.argmin(np.abs(x - val)) for val in values], dtype=int)
