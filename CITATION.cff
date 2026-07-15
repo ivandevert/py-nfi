@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below."
+title: "py-nfi"
+abstract: "Compute the normalized frequency index (nFI) from earthquake spectra."
+authors:
+  - family-names: "Vandevert"
+    given-names: "Ian"
+url: "https://github.com/ivandevert/py-nfi"
+license: MIT
+preferred-citation:
+  type: article
+  title: "Using a High-to-Low-Frequency Spectral Ratio to Distinguish Variations in Earthquake Source Properties"
+  authors:
+    - family-names: "Vandevert"
+      given-names: "Ian"
+    - family-names: "Shearer"
+      given-names: "Peter M."
+    - family-names: "Fan"
+      given-names: "Wenyuan"
+  journal: "Bulletin of the Seismological Society of America"
+  year: 2026
+  doi: "10.1785/0120250171"
