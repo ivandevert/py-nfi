@@ -12,3 +12,4 @@ src/nfi/_version.py
 /dist
 /__pycache__
 /ridgecrest/__pycache__
+/src/py_nfi.egg-info
