@@ -17,3 +17,6 @@ src/nfi/_version.py
 ridgecrest/data/spectra.zip
 ridgecrest/p_results/data.logbeta
 ridgecrest/s_results/data.logbeta
+ridgecrest/s_results_backup.zip
+ridgecrest/synthetic_results_backup.zip
+ridgecrest/p_results_backup.zip
