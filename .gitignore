@@ -13,3 +13,7 @@ src/nfi/_version.py
 /__pycache__
 /ridgecrest/__pycache__
 /src/py_nfi.egg-info
+/ridgecrest/data/spectra
+ridgecrest/data/spectra.zip
+ridgecrest/p_results/data.logbeta
+ridgecrest/s_results/data.logbeta
