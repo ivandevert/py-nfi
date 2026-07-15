@@ -6,7 +6,7 @@ This version is used to produce the results in the 2026 Ridgecrest nFI paper:
 https://doi.org/10.1785/0120250171
 See the /src/ folder in the repo root directory for the updated version
 
-beta_compute.py
+nfi_compute.py
 
 Optimized version of beta_compute.py targeting:
   1) Memory reduction (~3-5x for 10M+ records)
@@ -38,6 +38,7 @@ Future improvements:
 import numpy as np
 import pandas as pd
 from tqdm import trange, tqdm
+import warnings
 import time
 import os
 import pickle as pkl
@@ -308,7 +309,7 @@ def _dlogbeta_worker(event_indices, shm_names, shm_shapes, shm_dtypes,
 
     return results
 
-class BetaEstimator:
+class nFIEstimator:
     def __init__(self, 
         df_records, 
         spectra, 
@@ -338,7 +339,7 @@ class BetaEstimator:
         ):
         t0 = time.time()
 
-        if not quiet: print("Initializing BetaEstimator")
+        if not quiet: print("Initializing nFIEstimator")
         if not quiet: print("--------------------------")
         
         # These are parameters that shouldn't change results (assuming
@@ -398,7 +399,7 @@ class BetaEstimator:
         if not self.quiet: self.print_calibration_information()
 
         self.fprint("STATUS:")
-        self.fprint(f"BetaEstimator initialized in {time.time()-t0:.4f} s. "
+        self.fprint(f"nFIEstimator initialized in {time.time()-t0:.4f} s. "
                      f"Using {self.n_workers} workers. Run 'compute()' to continue.")
         self.fprint("--------------------------------------------------------------------")
 
@@ -1224,3 +1225,11 @@ def _get_bearing(lat1, lon1, lat2, lon2):
     bearing = np.degrees(np.arctan2(y, x))
     bearing = (bearing + 360) % 360
     return bearing
+
+class BetaEstimator(nFIEstimator):
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "BetaEstimator is deprecated; use nFIEstimator.",
+            DeprecationWarning, stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)

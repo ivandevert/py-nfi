@@ -21,6 +21,12 @@ or, with conda:
 conda install -c conda-forge py-nfi
 ```
 
+py-nfi requires the following packages:
+- numpy
+- pandas
+- scipy
+- tqdm
+
 ## Quick start
 
 ```python
@@ -31,7 +37,8 @@ from nfi import nFIEstimator
 # df_records: one row per event-station record (a single observed spectrum)
 # spectra:    N x nf array of signal amplitude spectra, aligned row-for-row
 #             with df_records (the signal windows; noise spectra are used
-#             upstream for signal-to-noise screening, not passed here)
+#             upstream for signal-to-noise screening, not passed here). Each
+#             record in spectra has already passed signal-to-noise criteria.
 # f:          length-nf frequency array (0 to Nyquist)
 
 est = nFIEstimator(df_records, spectra, f, save_dir="results/")
@@ -40,10 +47,15 @@ est.compute()
 # per-event results, including the 'nfi' column, are written to results/
 # and available as est.df_events
 ```
+### df_records structure
+`df_records` must contain the following for each record at minimum:
+- `event_name`, the recorded event's **unique** identifier;
+- `channel_name`, the recording station's **unique** identifier;
+- `emag`, `elat`, `elon`, and `edep` (km), the event's magnitude and location ;
+- `slat`, `slon`, and `selev`, the station's location; and
+- `deldist`, the horizontal event-station distance in kilometers;
 
-`df_records` must contain, at minimum, the columns `event_name`, `channel_name`,
-`emag`, `elat`, `elon`, `edep`, `slat`, `slon`, `selev`, and `deldist`, where
-`e*` fields describe the event and `s*` fields describe the recording station.
+This pandas DataFrame should be of length N, with each row corresponding to the nth row in `spectra`. `e*` fields describe the event and `s*` fields describe the recording station.
 
 ## Method
 
@@ -83,13 +95,17 @@ For full detail and validation of the method, see Vandevert et al. (2026) below.
 
 ## Reproducing the Ridgecrest results
 
-<!-- TODO: describe how to run ridgecrest/run_beta_compute.ipynb against the
-bundled spectra and catalogs to reproduce the published figures. -->
+Clone this repository:
+```bash
+git clone https://github.com/ivandevert/py-nfi your/local/save/path/
+```
 
-## Where the spectra come from
+Download the precomputed, signal-to-noise passing spectra from (15 July 2026: COMING SOON -- email me for link) into the repo's `ridgecrest/data/` subdirectory:
+```bash
+coming soon
+```
 
-<!-- TODO: describe the upstream waveform download and spectral estimation steps
-that produce the N x nf spectra consumed by this package. -->
+Launch `run_nfi_compute.ipynb` and run all cells.
 
 ## Citation
 
