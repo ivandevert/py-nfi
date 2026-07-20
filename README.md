@@ -100,9 +100,15 @@ Clone this repository:
 git clone https://github.com/ivandevert/py-nfi your/local/save/path/
 ```
 
-Download the precomputed, signal-to-noise passing spectra from (15 July 2026: COMING SOON -- email me for link) into the repo's `ridgecrest/data/` subdirectory:
+Download the precomputed, signal-to-noise passing spectra from [Zenodo](https://zenodo.org/records/21463045) into the repo's `ridgecrest/data/` subdirectory, unzip, and remove the compressed folder:
 ```bash
-coming soon
+wget https://zenodo.org/records/21463045/files/spectra.zip spectra.zip
+
+md5sum -c - <<< "10e714977e73dd396721194e88fd88e0  spectra.zip"
+
+unzip spectra.zip -d py-nfi/ridgecrest/data
+
+rm spectra.zip
 ```
 
 Launch `run_nfi_compute.ipynb` and run all cells.
