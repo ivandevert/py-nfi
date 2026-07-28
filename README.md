@@ -16,7 +16,7 @@ characterizing source behavior at high frequencies.
 pip install py-nfi
 ```
 
-or, with conda:
+or, with conda [COMING SOON]:
 
 ```bash
 conda install -c conda-forge py-nfi
