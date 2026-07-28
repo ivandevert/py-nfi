@@ -3,7 +3,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/py-nfi.svg)](https://pypi.org/project/py-nfi/)
 [![Python versions](https://img.shields.io/pypi/pyversions/py-nfi.svg)](https://pypi.org/project/py-nfi/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21632630.svg)](https://doi.org/10.5281/zenodo.21632630)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21632629.svg)](https://doi.org/10.5281/zenodo.21632629)
 
 Compute the **normalized frequency index (nFI)** from earthquake spectra. nFI is a
 data-driven measure of the relative high-frequency content of a seismic source,
